@@ -27,45 +27,104 @@ def EnvironmentSettings(wdir):
     return 
 
 
+def crs(file):
+    # Print CRS of given file to console
+    
+    arcpy.env.workspace = arcpy.GetParameterAsText(0)
+    
+    desc = arcpy.Describe(file)
+    spatial_ref = desc.SpatialReference
+    
+    if spatial_ref.name == "Unknown":
+        print("{0} has an unknown spatial reference".format(file))
+
+    else:
+            print("{0} : {1}".format(file, spatial_ref.name))
+    
+    return
+
+
+def NUTS_to_ZoneRaster(wdir, cellsize):
+    """
+    Convert NUTS3 fires shapefile to a raster dataset, identifying the zones
+
+    Parameters
+    ----------
+    wdir : str
+        Working Directory.
+    cellsize : int or str
+        output raster cell size. This can be either a raster, or absolute value
+
+    Returns
+    -------
+    sa.Raster.Raster
+
+    """
+    # 
+    
+    # Input File path
+    NUTS_fire = os.path.join(wdir + os.path.sep + r'a0Data\b02Shapes\NUTS_fire2.shp')
+    
+    # Output File path
+    NUTS3_zone_raster = os.path.join(wdir + os.path.sep + r"a0Data\a03TempData.gdb\NUTS3_zone_raster") 
+
+    # Process: Polygon to Raster (Polygon to Raster) (conversion)
+    with arcpy.EnvManager(workspace=r"C:\Users\jaspd\Desktop\AM_1265_Research_Project\02ArcGIS\01_ArcGIS_Project\a0Data\a03TempData.gdb"):
+        arcpy.conversion.PolygonToRaster(in_features = NUTS_fire, value_field = "NUTS_ID", 
+                                         out_rasterdataset = NUTS3_zone_raster, cell_assignment = "CELL_CENTER", 
+                                         priority_field = "NONE", cellsize = cellsize)
+        
+    return arcpy.Raster(NUTS3_zone_raster)
+
 
 def JacobsenDataset(wdir):
+    # ===== Identify variables, and setting the environment =====
     
     # Inform that Arcpy Module will be used to generate missing data
     print('Using the Arcpy Module to generate missing data')
     
     # Define Environment Settings
     EnvironmentSettings(wdir)
-    arcpy.env.cellSize = 500
     
-    # Identify Datasets
-    NUTS_fire2 = os.path.join(wdir + os.path.sep + r'a0Data\b02Shapes\NUTS_fire2.shp')
-    Low_Impact_tif = os.path.join(wdir + os.path.sep + r'c0Scratch\Low_Impact.tif')
-    LowImpactLand_Table = os.path.join(wdir + "\\a0Data\\a02WorkingData.gdb\LowImpactLand_Table")
+    # Input Dataset(s)
+    #NUTS_fire2 = os.path.join(wdir + os.path.sep + r'a0Data\b02Shapes\NUTS_fire2.shp')
+    Jacobsen2019_LowImpact_tif = arcpy.Raster(os.path.join(wdir + os.path.sep + r"a0Data\b01Rasters\01_Jacobsen2019_LowImpact.tif"))
+    
+    # Output Dataset(s)
+    LIA_Reclassified = "LIA_Reclassified"
     LowImpactLand_NUTS3_Stats_xls = os.path.join(wdir + "\\a0Data\\b03ExcelCSV\\LowImpactLand_NUTS3_Stats.xls")
     
     # Importing the Conversion Toolset
     arcpy.ImportToolbox(r"c:\users\jaspd\appdata\local\programs\arcgis\pro\Resources\ArcToolbox\toolboxes\Conversion Tools.tbx")
     
-    # ===== Starting the actual process
-    # Process: Extract by Mask (Extract by Mask) (sa)
-    LIA_clipped = arcpy.sa.ExtractByMask(in_raster=Low_Impact_tif, in_mask_data=NUTS_fire2)
-    LIA_clipped.save("LIA_clipped")
-
-    # Process: Reclassify (Reclassify) (sa)
-    LIA_reclassed = arcpy.sa.Reclassify(in_raster=LIA_clipped, reclass_field="VALUE", remap="-128 NODATA;0 0;100 1", missing_values="DATA")
-    LIA_reclassed.save("LIA_reclassed")
-
-    # Process: Zonal Statistics as Table (Zonal Statistics as Table) (sa)
-    print('Performing a Zonal Statistics Analysis to the dataset of Jacobsen')
-    LIL_Table = arcpy.sa.ZonalStatisticsAsTable(in_zone_data = NUTS_fire2, zone_field = "NUTS_ID", 
-                                    in_value_raster = LIA_reclassed, out_table = LowImpactLand_Table, 
-                                    ignore_nodata = "NODATA", statistics_type = "ALL", 
-                                    process_as_multidimensional = "CURRENT_SLICE", percentile_values = [100])
-                                                          
-    # Process: Table To Excel (Table To Excel) (conversion)
-    arcpy.conversion.TableToExcel(Input_Table=LIL_Table, Output_Excel_File=LowImpactLand_NUTS3_Stats_xls, 
+    
+    # ===== Starting the actual process =====
+    
+    # 01: Reclassify (Reclassify) (sa)
+    print('Reclassifying Low Impact Land Data...')
+    LIA_Reclass = arcpy.sa.Reclassify(in_raster = Jacobsen2019_LowImpact_tif, reclass_field = "Value", 
+                                      remap = "-128 NODATA;0 0;100 1", missing_values = "DATA")
+    LIA_Reclass.save(LIA_Reclassified) # Save the file, so the cell size can be used in the next step
+    
+    
+    # 02: Convert the NUTS shp zones to zone raster
+    ZoneRaster = NUTS_to_ZoneRaster(wdir = wdir, cellsize = LIA_Reclass)
+    
+    
+    # 03: Zonal Statistics as Table (Zonal Statistics as Table) (sa)
+    print('Performing a Zonal Statistics Operation...')
+    LIA_Table = "C:\\Users\\jaspd\\Desktop\\AM_1265_Research_Project\\02ArcGIS\\01_ArcGIS_Project\\a0Data\\a02WorkingData.gdb\\LIA_Table"
+    arcpy.sa.ZonalStatisticsAsTable(in_zone_data = ZoneRaster, zone_field = "NUTS_ID", in_value_raster = LIA_Reclassified, 
+                                    out_table=LIA_Table, ignore_nodata="DATA", statistics_type="ALL", 
+                                    process_as_multidimensional="CURRENT_SLICE", percentile_values=[100])#.save(Zonal_Statistics_as_Table)
+    
+    
+    # 6: Table To Excel (Table To Excel) (conversion)
+    print('Saving the data to an Excel file at: {}'.format(LowImpactLand_NUTS3_Stats_xls))
+    arcpy.conversion.TableToExcel(Input_Table=LIA_Table, Output_Excel_File=LowImpactLand_NUTS3_Stats_xls, 
                                   Use_field_alias_as_column_header="ALIAS", Use_domain_and_subtype_description="CODE")
     
     return
+
 
 
