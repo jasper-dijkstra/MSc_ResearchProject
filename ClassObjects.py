@@ -14,7 +14,7 @@ import pandas as pd
 import shapefile
 
 # Import variables from Main Script
-from __main__ import *
+from __main__ import wdir, data_dir
 
 
 class IndependentVariable:
@@ -49,20 +49,32 @@ class IndependentVariable:
             self.data = pd.read_excel(os.path.join(data_dir + os.path.sep + filename))
         else:
             # Perform other thing
-            self.__FunctionToGenerate__()
+            self.__FunctionToGenerate__(filename)
             self.data = pd.read_excel(os.path.join(data_dir + os.path.sep + filename))
     
     
-    def __FunctionToGenerate__(self):
+    def __FunctionToGenerate__(self, filename):
         # This function is called if the specified dataset (filename) does not exist.
-        # The data is (re-)generated using the default filename at the default path
+        # The data is (re-)generated using the given filename at the default path
         
-        # Import inside function, to make model work without Arcpy as well, when correct datasets present
+        # Import script inside function, to make model work without Arcpy as well (when correct datasets present)
         import PreparingData as prep
+        
+        # Input zone shapefile
+        in_zones_shp = os.path.join(wdir + os.path.sep + r'a0Data\b02Shapes\NUTS_fire2.shp')
         
         # Check for item ID to call correct function to generate data
         if self.ID == 1: # ID 1 = Jacobsen et al. 2019 (Low Impact Land)
-            prep.JacobsenDataset(wdir)          
+            print("Using the Arcpy Module to generate missing 'Low Impact Land' data")
+            Jacobsen = os.path.join(wdir + r"\\a0Data\\b01Rasters\\01_Jacobsen2019_LowImpact.tif") # Input Raster path
+            out_xls = os.path.join(wdir + r"\\a0Data\\b03ExcelCSV\\" + filename) # Output xls file path
+            in_value_raster = prep.ReclassLowImpactRaster(wdir, Jacobsen)
+            prep.ZonalStatistics(wdir, in_zones_shp, in_value_raster, out_xls)
+        if self.ID == 2: # ID 2 = Digital Elevation Model (Altitude data)
+            print('Using the Arcpy Module to generate missing Altitude data')
+            DEM = os.path.join(wdir + os.path.sep + r"a0Data\b01Rasters\02_Altitude_DEM.tif") # Input Raster path
+            out_xls = os.path.join(wdir + "\\a0Data\\b03ExcelCSV\\" + filename) # Output xls file path
+            prep.ZonalStatistics(wdir, in_zones_shp, DEM, out_xls)
         else:
             pass
         
