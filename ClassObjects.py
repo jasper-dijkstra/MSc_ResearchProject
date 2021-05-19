@@ -13,6 +13,9 @@ import os
 import pandas as pd
 import shapefile
 
+# Local Imports
+import ImportingData as read
+
 # Import variables from Main Script
 from __main__ import wdir, data_dir
 
@@ -40,17 +43,34 @@ class IndependentVariable:
         self.source = source
                 
         # Add the actual dataset
-        self.__ReadXLS__(filename)
+        if filename.endswith(".xls"):
+            self.__ReadXLS__(filename)
+        elif filename.endswith(".csv") or filename.endswith(".tsv"):
+            self.__ReadCSV__(filename)
+        return
         
-        
+    
     def __ReadXLS__(self, filename):
         # Check if the given file exists, else regenerate it through the Arcpy Module
         if os.path.isfile(os.path.join(data_dir + os.path.sep + filename)):
             self.data = pd.read_excel(os.path.join(data_dir + os.path.sep + filename))
         else:
-            # Perform other thing
             self.__FunctionToGenerate__(filename)
             self.data = pd.read_excel(os.path.join(data_dir + os.path.sep + filename))
+        return
+    
+    
+    def __ReadCSV__(self, filename):
+        # Import CSV or TSV files, based on independent variable ID
+        fires = DependentVariable(os.path.join(wdir + os.path.sep + r'a0Data\b02Shapes\NUTS_fire2.shp'))
+        
+        if self.ID == 3: # ID 3 population Density Dataset
+            tsv_path = os.path.join(wdir + r"\\a0Data\\b03ExcelCSV\\" + filename)
+            years = 2018 # 2018, because it is the most recent year with data for all NUTS3 regions
+            self.data = read.ReadPopulationDensityTSV(tsv_path = tsv_path, 
+                                                      dependent_variable_obj = fires, 
+                                                      years = years)
+        return
     
     
     def __FunctionToGenerate__(self, filename):
@@ -100,5 +120,3 @@ class DependentVariable:
         self.data = df
         
         return
-        # Do stuff
-
