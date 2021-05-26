@@ -9,12 +9,12 @@ Created on Mon May 10 14:22:21 2021
 
 import os
 
-
+import numpy as np
 import pandas as pd
 import shapefile
 
 # Local Imports
-import ImportingData as read
+import ReadingData as read
 
 # Import variables from Main Script
 from __main__ import wdir, data_dir
@@ -55,7 +55,7 @@ class IndependentVariable:
         if os.path.isfile(os.path.join(data_dir + os.path.sep + filename)):
             self.data = pd.read_excel(os.path.join(data_dir + os.path.sep + filename))
         else:
-            self.__FunctionToGenerate__(filename)
+            self.__GenerateMissingData__(filename)
             self.data = pd.read_excel(os.path.join(data_dir + os.path.sep + filename))
         return
     
@@ -72,8 +72,8 @@ class IndependentVariable:
                                                       years = years)
         return
     
-    
-    def __FunctionToGenerate__(self, filename):
+
+    def __GenerateMissingData__(self, filename):
         # This function is called if the specified dataset (filename) does not exist.
         # The data is (re-)generated using the given filename at the default path
         
@@ -95,11 +95,24 @@ class IndependentVariable:
             DEM = os.path.join(wdir + os.path.sep + r"a0Data\b01Rasters\02_Altitude_DEM.tif") # Input Raster path
             out_xls = os.path.join(wdir + "\\a0Data\\b03ExcelCSV\\" + filename) # Output xls file path
             prep.ZonalStatistics(wdir, in_zones_shp, DEM, out_xls)
+        if self.ID == 4: # ID 4 = Lightning Data
+            print('Using the Arcpy Module to generate missing Lightning data')
+            nc_path = os.path.join(wdir + r"\\a0Data\b04NetCDFHDF\LISOTD_HRFC_V2.3.2015.nc") # input nc path
+            out_file = "LightningRaster" # Filename of raster to be generated
+            out_xls = os.path.join(wdir + r"\\a0Data\\b03ExcelCSV\\" + filename) # Output xls file path
+            lon, lat, data = read.ReadNC(path = nc_path, variable = "HRFC_COM_FR") # Open NC dataset
+            data = np.nan_to_num(data, copy = False, nan = 0)
+            prep.NumpyToRaster(wdir, out_file, lon, lat, data, cellsize=0.5) # Opened NC to raster
+            prep.ZonalStatistics(wdir, in_zones_shp, out_file, out_xls) # Zonal stats on data
+            
+            
         else:
             pass
         
         return
-    
+
+
+
     
 class DependentVariable:
     

@@ -19,10 +19,10 @@ data_dir = os.path.join(wdir + os.path.sep +  r'a0Data\b03ExcelCSV') # Relative 
 
 # Local Imports
 import ClassObjects as init
-#import MultivariateAnalysis as mv
+import ProcessData as pr
 
 
-#%% Reading the fire data shp
+#%% Reading the fire data shp as dependent variable object
 
 fires = init.DependentVariable(filepath = os.path.join(wdir + os.path.sep + r"a0Data\b02Shapes\NUTS_fire2.shp"))
 
@@ -47,27 +47,27 @@ iv3 = init.IndependentVariable(ID = 3,
                                filename = "PopDensPerNUTS3.tsv", 
                                source = "https://ec.europa.eu/eurostat/web/products-datasets/-/demo_r_d3dens")
 
+iv4 = init.IndependentVariable(ID = 4, 
+                               name = "LIS/OTD 0.5 Degree High Resolution Full Climatology (HRFC)", 
+                               author = "GHRC", 
+                               filename = "LightnigStrikes_NUTS3_Stats.xls", 
+                               source = "http://dx.doi.org/10.5067/LIS/LIS-OTD/DATA302")
+
 # Generated test dataset
-iv999 = init.IndependentVariable(ID = 4, 
+iv999 = init.IndependentVariable(ID = 5, 
                                name = 'Fictional', 
                                author = 'Jasper Dijkstra', 
                                filename = 'RandomTestData.xls', 
                                source = 'xxxxxx')
 
 
-
-
 #%% Use the data of the independent variable objects in a multivariate analysis
 
-# iv_list = [iv1, iv2, iv3] # list with independent variables
-# attribute = "MEAN" # attribute to look at in analysis
-# dv_attribute = "N_RATIO" # Dependent variable to look at (either N_RATIO or BA_RATIO)
+iv_list = [iv1, iv2, iv3, iv4, iv999] # list with independent variables
+attribute = "MEAN" # attribute to look at in analysis
+dv_attribute = "N_RATIO" # Dependent variable to look at (either N_RATIO or BA_RATIO)
 
-# df = mv.AnalysisDataFrame(fires, iv_list, attribute) # Generate DataFrame to be used for the analysis
-
-# Here regression analysis
+df = pr.AnalysisDataFrame(fires, iv_list, attribute) # Initiate DataFrame to be used for the analysis
 
 
-
-#
 

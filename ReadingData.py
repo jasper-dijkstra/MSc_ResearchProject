@@ -2,17 +2,23 @@
 """
 Created on Wed May 19 10:41:14 2021
 
-@author: Jasper Dijkstra
+author: Jasper Dijkstra
 
-This script contains function to read datafiles that do not require the Arcpy Library. 
-For example:
+This script contains functions that read input datasets and return as pd.df or np.array
+
+For example, data specific:
     - Population Density: https://ec.europa.eu/eurostat/web/products-datasets/-/demo_r_d3dens
 
+Or general function:
+    - ReadNC: Reads an input NetCDF file and returns lat, lon and data.
 
 
 """
 
+import numpy as np
 import pandas as pd
+import netCDF4 as nc
+
 
 def ReadPopulationDensityTSV(tsv_path, dependent_variable_obj, years = 2018):
     """
@@ -83,3 +89,44 @@ def ReadPopulationDensityTSV(tsv_path, dependent_variable_obj, years = 2018):
     # All columns to numbers, isntead of string
     #df[df.columns[2:]] = df[df.columns[2:]].apply(pd.to_numeric, errors = 'coerce')
     return df
+
+
+def ReadNC(path, variable):
+    """
+    General functino to read NetCDF file
+    
+    Parameters
+    ----------
+    path : str
+        Path to the nc file.
+    variable : str
+        The name of the variable in the file that contains the data values of interest.
+
+    Returns
+    -------
+    lon : np.array
+        1D Array with all longitude coordinates of the grid cells.
+    lat : np.array
+        1D Array with all latitude coordinates of the grid cells..
+    data : np.array
+        2D array of size [lat, lon] that describes the value of the grid cells.
+
+    """
+    # Open dataset
+    fid = nc.Dataset(path)
+    
+    # Get Coordinates
+    lon = np.ma.filled(fid.variables['Longitude'][:], np.nan)
+    lat = np.ma.filled(fid.variables['Latitude'][:], np.nan)
+    
+    # Get Dataset of interest
+    data = np.ma.filled(fid.variables[variable][:], np.nan)
+    
+    # Make the data the correct way up
+    data = np.flipud(data)
+    
+    # Close the dataset
+    fid.close()
+    
+    return lon, lat, data
+
