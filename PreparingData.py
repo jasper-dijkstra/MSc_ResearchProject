@@ -13,8 +13,7 @@ import numpy as np
 # Load the Arcpy Module
 import arcpy
 arcpy.CheckOutExtension('Spatial')
-from arcpy.sa import *
-
+#from arcpy.sa import *
 
 
 def crs(file):
@@ -62,6 +61,10 @@ def ZonalStatistics(wdir, in_zones_shp, in_value_raster, out_xls):
     NUTS3_zone_raster = "NUTS3_zone_raster"
     table = "temp_table"
     
+    # Make sure raster is raster
+    if type(in_value_raster) != arcpy.sa.Raster:
+        in_value_raster = arcpy.sa.Raster(in_value_raster)
+    
     # Check if raster size is at least 0.01 degrees
     x = float(arcpy.management.GetRasterProperties(in_value_raster, "CELLSIZEX").getOutput(0).replace(',', '.'))
     y = float(arcpy.management.GetRasterProperties(in_value_raster, "CELLSIZEY").getOutput(0).replace(',', '.'))
@@ -74,12 +77,13 @@ def ZonalStatistics(wdir, in_zones_shp, in_value_raster, out_xls):
         
     # Process: Polygon to Raster (Polygon to Raster) (conversion)
     print("Identifying all NUTS zones")
-    arcpy.conversion.PolygonToRaster(in_features = in_zones_shp, 
-                                     value_field = "NUTS_ID", 
-                                     out_rasterdataset = NUTS3_zone_raster, 
-                                     cell_assignment = "CELL_CENTER", 
-                                     priority_field = "NONE", 
-                                     cellsize = in_value_raster)
+    with arcpy.EnvManager(snapRaster = in_value_raster):
+        arcpy.conversion.PolygonToRaster(in_features = in_zones_shp, 
+                                         value_field = "NUTS_ID", 
+                                         out_rasterdataset = NUTS3_zone_raster, 
+                                         cell_assignment = "CELL_CENTER", 
+                                         priority_field = "NONE", 
+                                         cellsize = in_value_raster)
     
     # Zonal Statistics as a table
     print("Performing a zonal statistics operation")
@@ -105,7 +109,162 @@ def ZonalStatistics(wdir, in_zones_shp, in_value_raster, out_xls):
     arcpy.management.Delete("in_memory")
     
     return
+
+
+def TerrainRuggednessIndex(arr, nodata_value=float('nan')):
+    """
+    This Function calculates the Terrain Ruggedness Index of an np.array
+    (https://download.osgeo.org/qgis/doc/reference-docs/Terrain_Ruggedness_Index.pdf)
     
+    The function is based on the 'CountNeighbors Function' used in my Bachelor Thesis Project:
+        https://github.com/jasper-dijkstra/bachelorthesis/blob/master/raster_tools.py
+    
+    Note that the outer edges of the raster might display inaccuracies as the neighbors are smaller there!
+    Parameters
+    ----------
+    arr : arcpy.sa.raster
+        Digital Elevation Model Raster from the arcpy module.
+    out_path : str
+        Path (incl. filename) where the output raster will be saved.
+
+    Returns
+    -------
+    TRI: np.array of size arr, with terrain ruggedness values.
+
+    """
+    
+    # avoid problems/biases due to nodata
+    invalid_raster = np.array(arr == nodata_value).astype(int)
+    arr[arr == nodata_value] = 0
+    
+    # Retrieve the x and y size of the array
+    x, y = arr.shape
+    
+    # Initiate array where the sum of differences will be stored
+    ssdiff = np.zeros(arr.shape)
+    
+    # Determine for each gird cell the original grid cell, minus its neighor:
+    # We use np.abs, but Riley et al. (1999) use: np.sqrt(np.square()), which should yield the same result
+    ssdiff[1:x,:]       += np.abs(arr[1:] - arr[:-1]) # North
+    ssdiff[1:x,0:y-1]   += np.abs(arr[1:,:-1] - arr[:-1,1:]) # Northeast
+    ssdiff[0:x,0:y-1]   += np.abs(arr[:,:-1] - arr[:,1:]) # East
+    ssdiff[0:x-1,0:y-1] += np.abs(arr[:-1,:-1] - arr[1:,1:]) # Southeast
+    ssdiff[0:x-1,:]     += np.abs(arr[:-1,:] - arr[1:,:]) # South
+    ssdiff[0:x-1,1:]    += np.abs(arr[:-1,1:] - arr[1:,:-1]) # Southwest
+    ssdiff[:,1:]        += np.abs(arr[:,1:] - arr[:,:-1]) # West
+    ssdiff[1:x,1:]      += np.abs(arr[1:,1:] - arr[:-1,:-1]) # Northwest
+    
+    # Now take the square root of ssdiff matrix to compute the Ruggedness Index
+    TRI = ssdiff
+    
+    # Lastly, remove the nodata values from the input again:
+    TRI[invalid_raster == 1] = nodata_value
+    
+    return TRI
+
+
+def HandleLargeRaster(function, wdir, in_raster, out_path, file_id):
+    """
+    Use this funciton when arcpy is not able to convert a raster to an np.array directly, because of its size.
+    This function splits the raster into several smaller 'pixelblocks' that will be merged together again.
+    
+
+    Parameters
+    ----------
+    function : function
+        Function that will be performed on each pixelblock.
+    wdir : str
+        Working Directory.
+    in_raster : str / arcpy.sa.raster
+        path to, or raster object of the raster on which the function has to be applied.
+    out_path : str
+        path (with filename and extension) to output raster.
+    file_id : TYPE
+        cahracteristic of fucntion so temporary files are easier to recognize.
+
+    Returns
+    -------
+    Raster stored at out_path.
+
+    """
+    
+    # Environment Settings
+    #arcpy.env.workspace = os.path.join(wdir + r'\\c0Scratch\\')
+    workspace_path = os.path.join(wdir + os.path.sep + r"a0Data\a03TempData.gdb")
+    arcpy.env.workspace = workspace_path
+    arcpy.env.outputCoordinateSystem = in_raster
+    arcpy.env.cellSize = in_raster
+    arcpy.env.overwriteOutput = True
+    
+    # Notify that the PixelBlock Function will be used
+    print("The raster is very large, therefore a Pixelblock function will be used! This might take some time!")
+    
+    # Make sure input actually is a raster
+    in_raster = arcpy.sa.Raster(in_raster)
+    
+    # The raster is too large to export to an array, so we'll have to use PixelBlocks
+    # PC RAM = 7.88 GB -> we want to use max half, so 3.94e9 bytes
+    # This means the following blocksize (assuming 1 band is used):
+    blocksize = int(np.ceil(np.sqrt(3.94e09 / int(in_raster.pixelType[1:]))))
+    #print(f"blocksize = {blocksize}, with type {type(blocksize)}")
+    nodata_value = -32768
+    filelist = []
+    
+    for x in range(0, in_raster.width, blocksize):
+        for y in range(0, in_raster.height, blocksize):
+                
+            # Get lower left coordinate of map (in map units)
+            mx = in_raster.extent.XMin + x * in_raster.meanCellWidth
+            my = in_raster.extent.YMin + y * in_raster.meanCellWidth
+            
+            # Upper right coordinate of block (in cells)
+            lx = min([x + blocksize, in_raster.width])
+            ly = min([y + blocksize, in_raster.height])
+            
+            # Extract data block
+            array = arcpy.RasterToNumPyArray(in_raster, arcpy.Point(mx, my), lx-x, ly-y)
+            
+            # Apply desired funciton upon block
+            out_array = function(array, nodata_value)
+            
+            # Convert data block back to raster
+            out_raster = arcpy.NumPyArrayToRaster(out_array, arcpy.Point(mx, my), 
+                                                  in_raster.meanCellWidth,
+                                                  in_raster.meanCellHeight)
+            
+            # Save on disk temporarily as 'filename_#.ext'
+            temp_file = (f"x{x}_y{y}_tile")
+            out_raster.save(temp_file)
+            
+            # Maintain the blocknumber and append the stored raster to list
+            filelist.append(temp_file)
+        
+        print(f'finished row {(x/blocksize)+1} of {np.ceil(in_raster.height/blocksize)+1}')
+            
+    # Now Merge all rasters back to one again:
+    arcpy.management.MosaicToNewRaster(input_rasters = ';'.join(filelist[:]),
+                                       output_location = workspace_path,
+                                       raster_dataset_name_with_extension = f"{file_id}_Python",
+                                       pixel_type = "16_BIT_SIGNED",
+                                       number_of_bands = 1)
+    
+    # Now set actual nodata to supposed nodata values
+    outNull = arcpy.sa.SetNull(f"{file_id}_Python", f"{file_id}_Python", f"VALUE = {nodata_value}")
+    outNull.save(out_path)
+
+    # Release raster objects from memory
+    del out_raster
+    del in_raster
+    del outNull
+    
+    # Remove temporary files
+    arcpy.Delete_management("TRI_Python")
+    for fileitem in filelist:
+        if arcpy.Exists(fileitem):
+            arcpy.Delete_management(fileitem)
+
+    return
+
 
 def NumpyToRaster(wdir, out_file, lon, lat, data, cellsize=0.1):
     # Some Environment Settings
@@ -126,7 +285,33 @@ def NumpyToRaster(wdir, out_file, lon, lat, data, cellsize=0.1):
     return
 
 
-#%% Variable Specific Functions
+def NumpyToRaster2(wdir, out_path, array, lowerLeft, cellSize):
+    # Some Environment Settings
+    arcpy.env.overwriteOutput = True
+    arcpy.env.outputCoordinateSystem = arcpy.SpatialReference(4326)
+
+    # Convert Raster to Array 
+    tif_raster = arcpy.NumPyArrayToRaster(array, lowerLeft, cellSize, cellSize)
+    tif_raster.save(out_path)
+    
+    # Check if the crs is assigned correctly
+    crs(out_path)
+    
+    return
+
+
+def RasterToNumpy(raster_path):
+    raster = arcpy.sa.Raster(raster_path)
+    
+    # Extract some metadata of the raster to ease later export back to raster
+    lowerLeft = arcpy.Point(raster.extent.XMin, raster.extent.YMin)
+    cellSize = raster.meanCellWidth
+    
+    # Extract the raster values to an np.array
+    array = arcpy.RasterToNumPyArray(raster, nodata_to_value = -999)
+    
+    return array, lowerLeft, cellSize
+
 
 def ReclassLowImpactRaster(wdir, low_impact_raster_path):
     """
@@ -163,4 +348,3 @@ def ReclassLowImpactRaster(wdir, low_impact_raster_path):
     LIA_Reclass.save(LIA_Reclassified) 
 
     return LIA_Reclassified
-
