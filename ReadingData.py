@@ -91,50 +91,50 @@ def ReadPopulationDensityTSV(tsv_path, dependent_variable_obj, years = 2018):
     return df
 
 
-def ReadMODIS_MCD64A1(csv_path):
-    """
+# def ReadMODIS_MCD64A1(csv_path):
+#     """
     
 
-    Parameters
-    ----------
-    csv_path : str
-        Path to .csv file that results from the Google Earth Engine Script:
-            https://code.earthengine.google.com/84d4275b0e18ab06912db61f430259ac
+#     Parameters
+#     ----------
+#     csv_path : str
+#         Path to .csv file that results from the Google Earth Engine Script:
+#             https://code.earthengine.google.com/84d4275b0e18ab06912db61f430259ac
 
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame with total burned area per year and the mean, stdev and ba_cv 
-        of the annual burned area per NUTS3 geometry in the European Fire Emissions Database
+#     Returns
+#     -------
+#     pd.DataFrame
+#         DataFrame with total burned area per year and the mean, stdev and ba_cv 
+#         of the annual burned area per NUTS3 geometry in the European Fire Emissions Database
 
-    """
-    # Import the csv file as a pd.DataFrame
-    df = pd.read_csv(csv_path, delimiter = ',')
+#     """
+#     # Import the csv file as a pd.DataFrame
+#     df = pd.read_csv(csv_path, delimiter = ',')
     
-    # Remove unneccesary columns
-    df.drop(df.columns[len(df.columns)-1], axis=1, inplace=True)
-    del df['system:index']
+#     # Remove unneccesary columns
+#     df.drop(df.columns[len(df.columns)-1], axis=1, inplace=True)
+#     del df['system:index']
     
-    # Get the area from m2 to km2
-    df['sum'] = df['sum'] * 1e-06
+#     # Get the area from m2 to km2
+#     df['sum'] = df['sum'] * 1e-06
     
-    # Create new df with all unique NUTS regions
-    ba_df = df['NUTS_ID'].drop_duplicates()
+#     # Create new df with all unique NUTS regions
+#     ba_df = df['NUTS_ID'].drop_duplicates()
     
-    # Now filter all annual data per column
-    for year in range(int(df['year'].min()), int(df['year'].max())+1):
-        year_df = df.loc[(df["year"] == year)]
-        year_df = year_df[["NUTS_ID", "sum"]]
-        ba_df = pd.merge(ba_df, year_df, on=['NUTS_ID'])
-        ba_df = ba_df.rename(columns={'sum': str(year)})
+#     # Now filter all annual data per column
+#     for year in range(int(df['year'].min()), int(df['year'].max())+1):
+#         year_df = df.loc[(df["year"] == year)]
+#         year_df = year_df[["NUTS_ID", "sum"]]
+#         ba_df = pd.merge(ba_df, year_df, on=['NUTS_ID'])
+#         ba_df = ba_df.rename(columns={'sum': str(year)})
     
-    # Calculate the coefficient of variation
-    ba_df['mean'] = ba_df.mean(axis = 1)
-    ba_df['stdev'] = ba_df.std(axis = 1)
-    ba_df['BA_CV'] = np.divide(ba_df['stdev'], ba_df['mean'])#, 
-                               #out = np.zeros(ba_df['stdev'].shape, dtype=float), where = ba_df['mean'] != 0)
+#     # Calculate the coefficient of variation
+#     ba_df['mean'] = ba_df.mean(axis = 1)
+#     ba_df['stdev'] = ba_df.std(axis = 1)
+#     ba_df['BA_CV'] = np.divide(ba_df['stdev'], ba_df['mean'])#, 
+#                                #out = np.zeros(ba_df['stdev'].shape, dtype=float), where = ba_df['mean'] != 0)
     
-    return ba_df
+#     return ba_df
 
 
 def ReadNC(path, variable):

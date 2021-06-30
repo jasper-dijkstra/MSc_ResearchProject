@@ -12,8 +12,6 @@ import os
 
 import numpy as np
 import pandas as pd
-#import geopandas as gpd
-#import shapefile
 
 # Local Imports
 import ReadingData as read
@@ -86,15 +84,21 @@ class IndependentVariable:
                                                       dependent_variable_obj = fires, 
                                                       years = years)
             self.data = self.metadata[["NUTS_ID", "Dens2018 "]]
+        if self.ID == 6 and not os.path.isfile(os.path.join(wdir + r"\\a0Data\\b03ExcelCSV\\" + filename)):
+            self.__GenerateMissingData__(filename)           
+        if self.ID == 6 and os.path.isfile(os.path.join(wdir + r"\\a0Data\\b03ExcelCSV\\" + filename)):
+            self.metadata = pd.read_csv(os.path.join(wdir + r"\\a0Data\\b03ExcelCSV\\" + filename))
+            self.data = self.metadata[["NUTS_ID", "BA_CV"]]
             
-        if self.ID == 6: # ID 6 = MODIS BA Interannual Variability
-            csv_path = os.path.join(wdir + r"\\a0Data\\b03ExcelCSV\\" + filename)
-            if os.path.isfile(csv_path):
-                self.metadata = read.ReadMODIS_MCD64A1(csv_path)
-                self.data = self.metadata[["NUTS_ID", "BA_CV"]]
-            else:
-                print(f"No file was found at {csv_path}! Please generate the correct data using: \
-                      https://code.earthengine.google.com/84d4275b0e18ab06912db61f430259ac, and then try again.")
+            # We do not want nan's in the data, so we fill them with the 'minimum' ba:
+            years = [col for col in self.metadata.columns if "SUM" in col] 
+            nandf = self.metadata.dropna()
+            fit = np.polyfit(np.log(nandf[years].sum(axis=1)), nandf["BA_CV"], 1)
+            minimum = fit[0] * np.log(1e-10) + fit[1]
+            # Alternative for above method to determine the minimum, based on excel trendline (2001 - 2019)
+            #minimum = -1.336 * np.log(1e-10) + 3.954
+            self.data = self.data.fillna(minimum)
+
         return
     
 
@@ -134,6 +138,10 @@ class IndependentVariable:
             TCD = os.path.join(wdir + os.path.sep + r"a0Data\b01Rasters\05_TreeCoverDensity.tif") # Input Raster path
             out_xls = os.path.join(wdir + "\\a0Data\\b03ExcelCSV\\" + filename) # Output xls file path
             prep.ZonalStatistics(wdir, in_zones_shp, TCD, out_xls)
+        if self.ID == 6: # ID 6 = MODIS BA data
+            print("Using the Arcpy Module to generate missing Coefficient of Variation in Burned Area")
+            print(f"Looking in {wdir}\a0Data\b01Rasters\06_MODIS_BA for tif files that are output of 'ImportingMODIS.py'")
+            prep.BA_CV_FromModis(wdir, in_zones_shp, filename)
         if self.ID == 7: # ID 7 = Ruggedness Index
             print('Using the Arcpy Module to generate missing Ruggedness Index data')
             DEM = os.path.join(wdir + os.path.sep + r"a0Data\b01Rasters\02_Altitude_DEM.tif") # Input Raster path
@@ -174,19 +182,38 @@ class DependentVariable:
     """
     
     def __init__(self, filepath):
-        self.data_with_nan, self.geometries = self.__readshapefile__(filepath) # Open the shapefile
+        try:
+            self.data_with_nan, self.geometries = self.__ReadShapefileSpatial__(filepath) # Open the shapefile
+        except AttributeError:
+            self.data_with_nan = self.__ReadShapefile__(self, filepath)
+        
         self.data_with_nan = self.__AppendRatios__(self.data_with_nan) # Calculate the ratio's
-        #self.data = self.data_with_nan.dropna(["N_RATIO_Human", "BA_RATIO_Human"])
-        self.data = self.data_with_nan.fillna(0)# Fill the nan's with 0!
+        self.data = self.data_with_nan.dropna(subset = ["N_RATIO_Human", "BA_RATIO_Human"])
+        #self.data = self.data_with_nan.fillna(0)# Fill the nan's with 0!
         self.countries = list(self.data["CNTR_CODE"].unique())
         self.data_header = list(self.data.columns.values.tolist())
+
         
-    def __readshapefile__(self, filepath):
-        # Open a shapefile and convert to a pandas DataFrame
+    def __ReadShapefileSpatial__(self, filepath):
+        # Open a shapefile and convert to a pandas DataFrame, with geometries
+        from arcgis.features import GeoAccessor, GeoSeriesAccessor # enables to create spatial dataframe
+        
         df = pd.DataFrame.spatial.from_featureclass(filepath)
         sdf = df[["NUTS_ID", "SHAPE"]] # Separate Geomtries
         df = pd.DataFrame(df.drop(columns='SHAPE')) # Keep DataFrame without Geometries
+        
         return df, sdf
+    
+    def __ReadShapefile__(self, filepath):
+        # Open a shapefile and convert to a pandas DataFrame, without geometries
+        import shapefile
+        
+        shp = shapefile.Reader(filepath)
+        fields = [x[0] for x in shp.fields][1:]
+        records = [list(i) for i in shp.records()]
+        df = pd.DataFrame(columns = fields, data = records)
+        
+        return df
     
     def __AppendRatios__(self, df):
         

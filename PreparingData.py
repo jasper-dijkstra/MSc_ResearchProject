@@ -7,12 +7,14 @@ This script contains functions that (re-)generate missing data to the desired ou
 NOTE that the functions in this script depend on the Arcpy library!
 
 """
-import os
+import os, glob, re
 import numpy as np
+import pandas as pd
 
 # Load the Arcpy Module
 import arcpy
 arcpy.CheckOutExtension('Spatial')
+from arcgis.features import GeoAccessor, GeoSeriesAccessor # enables to create spatial dataframe
 #from arcpy.sa import *
 
 
@@ -107,6 +109,72 @@ def ZonalStatistics(wdir, in_zones_shp, in_value_raster, out_xls):
     # Delete temprorary outputs and in_memory datasets
     arcpy.management.Delete(NUTS3_zone_raster)
     arcpy.management.Delete("in_memory")
+    
+    return
+
+
+def BA_CV_FromModis(wdir, in_zones_shp, filename):
+
+    # Set Environment Setting
+    arcpy.env.workspace = os.path.join(wdir + r'\\a0Data\\a03TempData.gdb')
+    arcpy.env.overwriteOutput = True
+    arcpy.ImportToolbox(r"c:\users\jaspd\appdata\local\programs\arcgis\pro\Resources\ArcToolbox\toolboxes\Conversion Tools.tbx")
+
+    # Temporary Output paths
+    NUTS3_zone_raster = "NUTS3_zone_raster"
+    table = "temp_table"
+
+    # Open the zones shapefile as a df with all NUTS_ID's
+    df = pd.DataFrame.spatial.from_featureclass(in_zones_shp)
+    df = df[["NUTS_ID", "NAME_LATN"]]
+    
+    # Get a list of all tif files in the MODIS BA folder
+    all_files = glob.glob(os.path.join(wdir + os.path.sep + r"a0Data\b01Rasters\06_MODIS_BA\*.tif"))
+
+    # Process: Polygon to Raster (Polygon to Raster) (conversion)
+    print("Identifying all NUTS zones")
+    with arcpy.EnvManager(snapRaster = all_files[0]):
+        arcpy.conversion.PolygonToRaster(in_features = in_zones_shp, 
+                                         value_field = "NUTS_ID", 
+                                         out_rasterdataset = NUTS3_zone_raster, 
+                                         cell_assignment = "CELL_CENTER", 
+                                         priority_field = "NONE", 
+                                         cellsize = all_files[0])
+    zone_raster = arcpy.Raster(NUTS3_zone_raster)
+    
+    print("Performing a zonal statistics operation for each MODIS year")
+    for file in all_files:
+        # Determine the year to which the file belongs
+        year = re.search(r'BA2...', file).group()[2:]
+        
+        # Zonal Statistiscs
+        arcpy.sa.ZonalStatisticsAsTable(in_zone_data = zone_raster, 
+                                        zone_field = "NUTS_ID", 
+                                        in_value_raster = file, 
+                                        out_table = table, 
+                                        ignore_nodata = "DATA", 
+                                        statistics_type = "SUM", 
+                                        process_as_multidimensional = "CURRENT_SLICE")
+        
+        # Return the created statistics table as a DataFrame
+        OIDFieldName = arcpy.Describe(table).OIDFieldName
+        input_fields = ["NUTS_ID", "SUM"]
+        final_fields = [OIDFieldName] + input_fields
+        np_array = arcpy.da.TableToNumPyArray(table, final_fields)#, query="", skip_nulls=False, null_values=None)
+        object_id_index = np_array[OIDFieldName]
+        table_df = pd.DataFrame(np_array, index=object_id_index, columns=input_fields)
+        
+        # Append this to the actual dataframe
+        df = pd.merge(df, table_df, on=['NUTS_ID'])
+        df = df.rename(columns = {"SUM" : f"SUM{year}"})
+        
+    # Calculate the coefficient of variation
+    df['mean'] = df.mean(axis = 1)
+    df['stdev'] = df.std(axis = 1)
+    df['BA_CV'] = np.divide(df['stdev'], df['mean'])#, 
+    
+    # Save dataframe as csv
+    df.to_csv(os.path.join(wdir + os.path.sep + r"a0Data\b03ExcelCSV" + os.path.sep + filename))
     
     return
 

@@ -35,10 +35,8 @@ def AnalysisDataFrame(dv, iv_list):
     header_list = df.columns.values.tolist()
     
     for i, iv in enumerate(iv_list):
-        #iv_data = iv.data.head()[-1]
-        #iv_data = iv.data[["NUTS_ID", attribute]] # Select only attribute of interest
-        #iv_data = iv_data.rename(columns = {"MEAN" : f"{attribute}_{iv.ID}"}) # Place correct ID at attribute
         df = pd.merge(df, iv.data, on=['NUTS_ID']) # Append to the dependent variable dataframe
+        df.rename(columns = {iv.data.columns[-1] : iv.name}, inplace = True)      
         header_list.append(iv.name)
         
     return df, header_list
