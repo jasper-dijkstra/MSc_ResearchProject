@@ -19,20 +19,30 @@ wdir = os.path.join(r'C:\Users\jaspd\Desktop\AM_1265_Research_Project\02ArcGIS\0
 # Local Imports
 import ClassObjects as init
 import ProcessData as pr
+import RandomForest as forest
 import PlottingData as plot
+
+# Behaviour Settings
+
+fig_wdir = r"C:\Users\jaspd\Google Drive\VU\AM_1265_Research_Project_Earth_And_Climate\04_Notes\Images"
+
+determine_correlations = True
+plot_correlations = False
+
+perform_random_forest = True
+
 
 # ========================================
 # INPUT DATA
 # ========================================
-#%% Reading the fire data shp as dependent variable object
+# 1. Reading the fire data shp as dependent variable object
 
 fires = init.DependentVariable(filepath = os.path.join(wdir + os.path.sep + r"a0Data\b02Shapes\NUTS_fire2.shp"))
 dv_attributes = fires.data_header
 cntrs = fires.countries
 
 
-#%% Generating Independent Variable Objects, from independent variable datasets
-
+# 2. Generating Independent Variable Objects, from independent variable datasets
 iv1 = init.IndependentVariable(ID = 1, 
                                 name = 'Human Land Impact',
                                 author = 'Jacobsen et al. 2019',
@@ -91,28 +101,20 @@ iv7 = init.IndependentVariable(ID = 7,
 #                                 source = 'xxxxxx')
 
 
-
-
-#%% Use the data of the independent variable objects in a multivariate analysis
-
+# 3. Sort input data to prepare for analysis:
 iv_list = [iv1, iv2, iv3, iv4, iv5, iv6, iv7]#, iv999] # list with independent variables
-
-df, headers = pr.AnalysisDataFrame(fires, iv_list) # !!! Initiate DataFrame to be used for the analysis
-
-spearman_corr, pearson_corr = pr.CorrMatrix(df, skip = 1) # Generate correlation matrices for all variables
-#mean_pearson = (np.sum(np.abs(np.array(pearson_corr))) - pearson_corr.shape[0]) / (np.product(pearson_corr.shape) - pearson_corr.shape[0])
-#mean_spearman = (np.sum(np.abs(np.array(spearman_corr))) - spearman_corr.shape[0]) / (np.product(spearman_corr.shape) - spearman_corr.shape[0])
+df, headers = pr.AnalysisDataFrame(fires, iv_list) # Initiate DataFrame to be used for the analysis
 
 
-#%%
+# ========================================
+# Analysis
+# ========================================
+# 1. Determine correlations and statistical significance (alpha < 0.05)
+spearman_p, pearson_p, spearman_corr, pearson_corr = pr.CorrMatrix(df, skip = 1) # Generate correlation matrices for all variables
+spearman_corr[spearman_p > 0.05] = float('nan') # Remove non-significant correlations
+pearson_corr[pearson_p > 0.05] = float('nan') # Remove non-significant correlations
 
-plot_correlations = False
-plot_colinearity = False
-plot_relationships = False    
-
-fig_wdir = r"C:\Users\jaspd\Google Drive\VU\AM_1265_Research_Project_Earth_And_Climate\04_Notes\Images"
-
-# Plot Pearson & Spearman Correlations:
+# If set, generate plots of correlation matrices
 if plot_correlations:
     plot.CorrelationMatrix(data = pearson_corr, headers = headers, title="Pearson Correlations", 
                             save_path=os.path.join(fig_wdir + r"\CorrMatrrix_Pearson.png"))
@@ -120,40 +122,36 @@ if plot_correlations:
                             save_path=os.path.join(fig_wdir + r"\CorrMatrrix_Spearman.png"))
 
 
-# Now Create Plots Of Interesting Combinations:
-
-# Top 7 Colinear Relationships
-if plot_colinearity:
-    plot.Scatter(df[iv2.name], df[iv7.name], save_path= os.path.join(fig_wdir + r'\Plot_Altitude_x_TRI.png'))
-    plot.Scatter(df[iv1.name], df[iv5.name], save_path= os.path.join(fig_wdir + r'\Plot_LIA_x_TCD.png'))
-    plot.Scatter(df[iv4.name], df[iv7.name], save_path= os.path.join(fig_wdir + r'\Plot_Lightning_x_TRI.png'))
-    plot.Scatter(df[iv2.name], df[iv4.name], save_path= os.path.join(fig_wdir + r'\Plot_Altitude_x_Lightning.png'))
-    plot.Scatter(df[iv1.name], df[iv7.name], save_path= os.path.join(fig_wdir + r'\Plot_LIA_x_TRI.png'))
-    plot.Scatter(df[iv6.name], df[iv3.name], save_path= os.path.join(fig_wdir + r'\Plot_BACV_x_PopDens.png'))
-    plot.Scatter(df[iv6.name], df[iv4.name], save_path= os.path.join(fig_wdir + r'\Plot_BACV_x_Lightning.png'))
-
-# Plot relationships between dependent and independent variables
-if plot_relationships:
-    plot.Scatter(df["N_RATIO_Human"], df["BA_RATIO_Human"], save_path= os.path.join(fig_wdir + r'\Plot_Nhum_x_BAhum.png'))
+# 2. Perform a Random Forest Analysis
+if perform_random_forest:
+    #!!! If required, the data can be normalized
+    # df2 = normalize(df, normlist)
+    # for i in normlist:
+    #     df = df.assign(**{i:df2[i]})
+    y = df.iloc[:,[1]] # df column with dependent variable
+    x = df.iloc[:,5:] # df columns with predictor variables
     
-    plot.Scatter(df[iv1.name], df["N_RATIO_Human"], save_path= os.path.join(fig_wdir + r'\Plot_LIA_x_Nhum.png'))
-    plot.Scatter(df[iv3.name], df["N_RATIO_Human"], save_path= os.path.join(fig_wdir + r'\Plot_PopDens_x_Nhum.png'))
-    plot.Scatter(df[iv7.name], df["N_RATIO_Human"], save_path= os.path.join(fig_wdir + r'\Plot_TRI_x_Nhum.png'))
+    # Initialising a Random Forest Analysis
+    rfm = forest.RandomForest(x = x, y = y, labels = x.columns.to_list(), 
+                       n_trees = 1000, # Number of trees to consider in default forest
+                       test_size=0.3, # Size (%) of the test data
+                       #random_state=42,
+                       scoring='explained_variance' # Scoring method to optimize
+                       )
+    
+    # Tune parameters with randomized grid search
+    # n_param_samples = amount of random samples to draw
+    rfm.RandomizedGridSearch(n_param_samples = 3)
+    
+    # Narrow down parameters even further, using Grid Search
+    rfm.GridSearch()
+    
+    
+    #final_importance = rfm.GridSearch_Importances
 
-    plot.Scatter(df[iv1.name], df["BA_RATIO_Human"], save_path= os.path.join(fig_wdir + r'\Plot_LIA_x_BAhum.png'))
-    plot.Scatter(df[iv3.name], df["BA_RATIO_Human"], save_path= os.path.join(fig_wdir + r'\Plot_PopDens_x_BAhum.png'))
-    plot.Scatter(df[iv5.name], df["BA_RATIO_Human"],  save_path= os.path.join(fig_wdir + r'\Plot_TCD_x_BAhum.png'))
 
 
-# def normalize(df, features_to_normalize):
-#     result = df.copy()
-#     result = result[features_to_normalize]
-#     for feature_name in features_to_normalize:
-#         max_value = df[feature_name].max()
-#         min_value = df[feature_name].min()
-#         result[feature_name] = (df[feature_name] - min_value) / (max_value - min_value)
-#     return result
-# 
-# #df2 = normalize(df, [""])
-# 
+
+
+
 

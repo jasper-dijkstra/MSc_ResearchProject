@@ -64,14 +64,21 @@ def CorrMatrix(df, skip=0):
     spearman_corr = pd.DataFrame(float('nan'), index=df.columns[skip:], columns=df.columns[skip:])
     pearson_corr = pd.DataFrame(float('nan'), index=df.columns[skip:], columns=df.columns[skip:])
     
+    spearman_p = pd.DataFrame(float('nan'), index=df.columns[skip:], columns=df.columns[skip:])
+    pearson_p = pd.DataFrame(float('nan'), index=df.columns[skip:], columns=df.columns[skip:])
+
     for i, x in enumerate(spearman_corr.columns):
         for j, y in enumerate(spearman_corr.columns):
             # Determine the pearson and spearman coefficients
             corrs, p_val_s = spearmanr(a = df[x], b = df[y])
             corrp, p_val_p = pearsonr(x = df[x], y = df[y])
-            
+                        
             # Append these to the DataFrame
             spearman_corr[x][y] = corrs
             pearson_corr[x][y] = corrp
-    
-    return spearman_corr, pearson_corr
+            
+            # Also denote the p-values
+            spearman_p[x][y] = p_val_s
+            pearson_p[x][y] = p_val_p
+            
+    return spearman_p, pearson_p, spearman_corr, pearson_corr

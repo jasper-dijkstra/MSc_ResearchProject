@@ -56,8 +56,9 @@ class IndependentVariable:
             self.__ReadXLS__(filename)
         elif filename.endswith(".csv") or filename.endswith(".tsv"):
             self.__ReadCSV__(filename)
-        return
         
+        return
+    
     
     def __ReadXLS__(self, filename):
         # Check if the given file exists, else regenerate it through the Arcpy Module
@@ -78,12 +79,12 @@ class IndependentVariable:
         # Import CSV or TSV files, based on independent variable ID
         if self.ID == 3: # ID 3 = population Density Dataset
             tsv_path = os.path.join(wdir + r"\\a0Data\\b03ExcelCSV\\" + filename)
-            years = 2018 # 2018, because it is the most recent year with data for all NUTS3 regions
+            years = list(np.arange(2001, 2019, 1))
             fires = DependentVariable(os.path.join(wdir + os.path.sep + r'a0Data\b02Shapes\NUTS_fire2.shp')) # Open the NUTS shapefile, because we need the area of all the NUTS regions!
             self.metadata = read.ReadPopulationDensityTSV(tsv_path = tsv_path, 
                                                       dependent_variable_obj = fires, 
                                                       years = years)
-            self.data = self.metadata[["NUTS_ID", "Dens2018 "]]
+            self.data = self.metadata[["NUTS_ID", "MeanDens"]]
         if self.ID == 6 and not os.path.isfile(os.path.join(wdir + r"\\a0Data\\b03ExcelCSV\\" + filename)):
             self.__GenerateMissingData__(filename)           
         if self.ID == 6 and os.path.isfile(os.path.join(wdir + r"\\a0Data\\b03ExcelCSV\\" + filename)):
@@ -137,7 +138,8 @@ class IndependentVariable:
             print('Using the Arcpy Module to generate missing Tree Cover Density data')
             TCD = os.path.join(wdir + os.path.sep + r"a0Data\b01Rasters\05_TreeCoverDensity.tif") # Input Raster path
             out_xls = os.path.join(wdir + "\\a0Data\\b03ExcelCSV\\" + filename) # Output xls file path
-            prep.ZonalStatistics(wdir, in_zones_shp, TCD, out_xls)
+            tcd_frac = prep.TreeCoverDensityToFract(wdir, TreeCoverDensity=TCD)
+            prep.ZonalStatistics(wdir, in_zones_shp, tcd_frac, out_xls)
         if self.ID == 6: # ID 6 = MODIS BA data
             print("Using the Arcpy Module to generate missing Coefficient of Variation in Burned Area")
             print(f"Looking in {wdir}\a0Data\b01Rasters\06_MODIS_BA for tif files that are output of 'ImportingMODIS.py'")
@@ -167,6 +169,15 @@ class IndependentVariable:
             pass
         
         return
+    
+    def GetStats(self):
+        print('Variable: ' + self.name)
+        print('MIN: ' + str(np.round(np.min(self.data.iloc[:,-1]), 2)))
+        print('MAX: ' + str(np.round(np.max(self.data.iloc[:,-1]), 2)))
+        print('MEAN: ' + str(np.round(np.mean(self.data.iloc[:,-1]), 2)))
+        print('STD: ' + str(np.round(np.std(self.data.iloc[:,-1]), 2)))
+        return
+
 
 
 class DependentVariable:
@@ -190,9 +201,8 @@ class DependentVariable:
         self.data_with_nan = self.__AppendRatios__(self.data_with_nan) # Calculate the ratio's
         self.data = self.data_with_nan.dropna(subset = ["N_RATIO_Human", "BA_RATIO_Human"])
         #self.data = self.data_with_nan.fillna(0)# Fill the nan's with 0!
-        self.countries = list(self.data["CNTR_CODE"].unique())
+        self.countries = list(self.data_with_nan["CNTR_CODE"].unique())
         self.data_header = list(self.data.columns.values.tolist())
-
         
     def __ReadShapefileSpatial__(self, filepath):
         # Open a shapefile and convert to a pandas DataFrame, with geometries

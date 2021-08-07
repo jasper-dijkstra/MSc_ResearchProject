@@ -20,7 +20,7 @@ import pandas as pd
 import netCDF4 as nc
 
 
-def ReadPopulationDensityTSV(tsv_path, dependent_variable_obj, years = 2018):
+def ReadPopulationDensityTSV(tsv_path, dependent_variable_obj, years = list(np.arange(2001, 2019, 1))):
     """
     
     Parameters
@@ -86,8 +86,12 @@ def ReadPopulationDensityTSV(tsv_path, dependent_variable_obj, years = 2018):
         # Rename Year Column, for more clarity
         df.rename(columns = {year : f"Dens{year}"}, inplace = True)
         
-    # All columns to numbers, isntead of string
-    #df[df.columns[2:]] = df[df.columns[2:]].apply(pd.to_numeric, errors = 'coerce')
+    # Now get the mean over all years:
+    denscols = [col for col in df if col.startswith('Dens')]
+    df["MeanDens"] = df[denscols].mean(axis = 1)
+    totalcols = [col for col in df if col.startswith('Total')]
+    df["MeanTotal"] = df[totalcols].mean(axis = 1)
+
     return df
 
 

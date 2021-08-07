@@ -416,3 +416,18 @@ def ReclassLowImpactRaster(wdir, low_impact_raster_path):
     LIA_Reclass.save(LIA_Reclassified) 
 
     return LIA_Reclassified
+
+
+def TreeCoverDensityToFract(wdir, TreeCoverDensity):
+    # Environment Settings
+    arcpy.env.workspace = os.path.join(wdir + r'\\a0Data\\a03TempData.gdb')
+    arcpy.env.overwriteOutput = True
+    
+    # Output Dataset(s)
+    tcd_fract = "TCD_Fract"
+    
+    # Divide by 100
+    tcd = arcpy.sa.Raster(TreeCoverDensity) / 100
+    tcd.save(tcd_fract)
+    
+    return tcd_fract
