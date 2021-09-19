@@ -14,8 +14,11 @@ By calling the RandomForest class:
           which takes the amount of samples to draw as an argument (n_param_samples)
         - Secondly, call the .GridSearch method.
 
+Additional information
+- Info in Random Forests: https://www.analyticsvidhya.com/blog/2020/03/beginners-guide-random-forest-hyperparameter-tuning/
+- Different options for the 'scoring' parameter: https://scikit-learn.org/stable/modules/model_evaluation.html#scoring
+- Possibly useful ways to visualise results: https://github.com/mahesh147/Random-Forest-Classifier/blob/master/random_forest_classifier.py
 
-https://www.analyticsvidhya.com/blog/2020/03/beginners-guide-random-forest-hyperparameter-tuning/
 
 """
 import pandas as pd
@@ -27,7 +30,7 @@ from sklearn.model_selection import train_test_split, RandomizedSearchCV, GridSe
 
 class RandomForest:
 
-    def __init__(self, x, y, labels, n_trees = 1000, random_state = 10, 
+    def __init__(self, x, y, labels, n_trees = 1000, random_state = 13, 
                  test_size = 0.3, scoring = 'explained_variance'):
         self.x = np.squeeze(np.array(x))
         self.y = np.squeeze(np.array(y))
@@ -99,7 +102,7 @@ class RandomForest:
         return
 
 
-    def GridSearch(self):
+    def GridSearch(self, init_params = 'random'):
         if not hasattr(self, "RandomGridSearch"):
             print("A Randomized Grid Search has to be performed prior to Grid Search! ... \n")
             print("Randomized Grid Search will be performed using default settings (n_param_samples = 100, scoring='explained_variance') \n")
@@ -108,9 +111,13 @@ class RandomForest:
         print('Grid Search CV: \n')
         
         # Generate a Narrowed Grid...
-        param_grid = self.__NarrowedParamGrid__(self.RandomGridSearch_Params, n_estimators_step=100,
-                                                n_estimators_bigstep=False)
-
+        if init_params == 'random':
+            param_grid = self.__NarrowedParamGrid__(self.RandomGridSearch_Params, n_estimators_step=100,
+                                                    n_estimators_bigstep=False)
+        else:
+            param_grid = self.__NarrowedParamGrid__(self.GridSearch_Params, n_estimators_step=100,
+                                                    n_estimators_bigstep=False)
+            
         # Initialize forest regressor
         forest = RandomForestRegressor(random_state = self.random_state) # Initialize forest regressor
         
@@ -158,7 +165,7 @@ class RandomForest:
         if print_output:
             print('Model Performance:')
             print('R-Squared test data:', np.round(r_squared, 2))
-            print('Average Error: {:0.4f} %.'.format(np.mean(errors) * 100))
+            print('Mean Absolute Error: {:0.4f} %.'.format(np.mean(errors) * 100))
             print('Accuracy = {:0.2f}%. \n'.format(accuracy))
     
         return r_squared, errors, accuracy
@@ -189,8 +196,8 @@ class RandomForest:
                         'bootstrap': bootstrap}
         
         return param_grid
-    
 
+    
     def __NarrowedParamGrid__(self, param_grid, n_estimators_step=100, n_estimators_bigstep=True):
         
         # Method of selecting samples for training each tree
@@ -227,41 +234,3 @@ class RandomForest:
             'n_estimators': n_estimators
         }
         return narrowed_params
-
-
-def normalize(df, features_to_normalize):
-    result = df.copy()
-    result = result[features_to_normalize]
-    for feature_name in features_to_normalize:
-        max_value = df[feature_name].max()
-        min_value = df[feature_name].min()
-        result[feature_name] = (df[feature_name] - min_value) / (max_value - min_value)
-    return result
-
-
-    
-        
-
-
-
-
-
-
-
-# # all_combinations = []
-# # for r in range(1, len(ivs)+1):
-# #     combinations = list(itertools.combinations(ivs, r=r))
-# #     all_combinations.append(combinations)
-# # all_combinations = [list(item) for sublist in all_combinations for item in sublist]
-# # all_combinations = np.array(all_combinations, dtype=object)
-
-
-
-# Scoring Options:
-# https://scikit-learn.org/stable/modules/model_evaluation.html#scoring
-
-
-
-
-# # Plots
-# # https://github.com/mahesh147/Random-Forest-Classifier/blob/master/random_forest_classifier.py
