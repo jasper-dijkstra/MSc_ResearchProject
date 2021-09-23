@@ -124,6 +124,108 @@ def CorrelationPlots(data, corr_idx, xitems, yitems, save_path, xlabels = None, 
 
 
 
+def FeatureImportance(ForestRegressor, labels, save_path, ForestRegressor2=None, labels2=None):
+    """
+    Plot the Relative Importance of each predictor variable in the Random Forest, in a bar chart
+    
+
+    Parameters
+    ----------
+    ForestRegressor : ensemble._forest.RandomForestRegressor
+    labels : list() with names of predictor variables belonging to ForestRegressor
+    ForestRegressor2 : ensemble._forest.RandomForestRegressor
+    labels2 : list() with names of predictor variables belonging to ForestRegressor2
+    save_path : Location (incl. extension) where output file needs to be stored.
+
+    Returns
+    -------
+    Figure saved at: 'save_path'.
+
+    """
+    
+    # Determine the mean Feature Importances:
+    importance = ForestRegressor.feature_importances_
+    
+    # Determining uncertainty margins (1 std), of choosing different trees in the forest
+    std = np.std([tree.feature_importances_ for tree in ForestRegressor], axis=0)
+
+    if ForestRegressor2 == None:
+        fig, ax = plt.subplots(figsize=(8.27, len(importance)/2))
+        ax.barh(labels, importance, 
+                xerr = std, align = 'center', alpha = 0.6, ecolor = 'black', capsize = 3)
+        ax.set_xlabel("Relative Importance (%)")
+    
+    else:
+        importance2 = ForestRegressor2.feature_importances_
+        std2 = np.std([tree.feature_importances_ for tree in ForestRegressor2], axis=0)
+        fig, (ax1, ax2) = plt.subplots(nrows = 2, ncols = 1 , 
+                                       figsize = (8.27, (len(importance)+len(importance2))/2), 
+                                       gridspec_kw={'height_ratios': [len(importance), len(importance2)]},
+                                       sharex = True)
+        
+        ax1.barh(y = labels, width = importance, height = 0.8,
+                 xerr = std, align = 'center', alpha = 0.6, ecolor = 'black', capsize = 3)
+        ax1.text(0.975, 0.9, r"$\bf(A)$", ha='center', va='center', transform=ax1.transAxes) # Label Fig
+        
+        ax2.barh(y = labels2, width = importance2, height = 0.8,
+                 xerr = std2, align = 'center', alpha = 0.6, ecolor = 'black', capsize = 3)
+        ax2.set_xlabel("Relative Importance (%)")
+        ax2.text(0.975, 0.9, r"$\bf(B)$", ha='center', va='center', transform=ax2.transAxes) # Label Fig
+
+
+    #layout()
+    fig.savefig(save_path, dpi=300, bbox_inches='tight')
+    
+    return
+
+
+
+def RandomForestPerformance(rfm_1, rfm_1_estimator, rfm_2, rfm_2_estimator, save_path):
+    """
+    Plot the observations and predictions of the test sets of the random forest model 
+    
+    Parameters
+    ----------
+    rfm_1 : RandomForest.RandomForest
+    rfm_1_estimator : ensemble._forest.RandomForestRegressor from rfm_1
+    rfm_2 : RandomForest.RandomForest
+    rfm_2_estimator : ensemble._forest.RandomForestRegressor from rfm_2
+    save_path : Location (incl. extension) where output file needs to be stored.
+
+    Returns
+    -------
+    Figure saved at: 'save_path'.
+
+    """
+    # Initiate figure
+    fig, (ax1, ax2) = plt.subplots(nrows = 1, ncols = 2, figsize=(8.27, 3),
+                                   sharex = True, sharey = True) #
+    
+    for ax, rfm, estimator in zip([ax1, ax2], [rfm_1, rfm_2], [rfm_1_estimator, rfm_2_estimator]):
+        observed = rfm.y_test
+        predicted = estimator.predict(rfm.x_test)
+    
+        coeff, intercept = np.polyfit(x = observed, y = predicted, deg = 1) # Determine linear regression fit
+        
+        ax.scatter(x = observed, y = predicted, c = 'black', marker = '+') # Plot data points as scatter
+        ax.plot(observed, observed*coeff + intercept, c = 'red') # Plot regression line
+        
+        #ax.set_xlim(0, 1)
+        #ax.set_ylim(0, 1)
+        
+    ax1.set_xlabel("Observed Fire Incidence \n Ratio")
+    ax2.set_xlabel("Observed Burned Area \n Ratio")
+    
+    ax1.set_ylabel("RFM Predicted Ratio")
+    
+    ax1.text(0.075, 0.925, r"$\bf(A)$", ha='center', va='center', transform=ax1.transAxes)
+    ax2.text(0.075, 0.925, r"$\bf(B)$", ha='center', va='center', transform=ax2.transAxes)
+    
+    fig.savefig(save_path, dpi=300, bbox_inches='tight')
+
+    return 
+
+
 
 def Scatter(x, y, fit_type = 'linear', confidence_interval = 95, order=1, title=None, save_path=None, show=False):
     

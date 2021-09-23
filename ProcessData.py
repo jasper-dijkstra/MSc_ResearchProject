@@ -14,13 +14,13 @@ import pandas as pd
 from scipy.stats import spearmanr, pearsonr
 
 
-def AnalysisDataFrame(dv, iv_list):
+def AnalysisDataFrame(data, iv_list):
     """
     Function to generate dataframe with all attributes of interest for all independent variables
     
     Parameters
     ----------
-    dv : Dependent Variable Object.
+    data : pd.DataFrame resulting from a dependent variable object.
     iv_list : List with Independent Variable Objects
     attribute : Attributes from iv's to use to explain dependent variable 
         use one of: "MEAN", "STD", "SUM", "Variety", "MEDIAN".
@@ -31,7 +31,7 @@ def AnalysisDataFrame(dv, iv_list):
 
     """
     
-    df = dv.data[['NUTS_ID'] + dv.data_header[-4:]]
+    df = data[['NUTS_ID', 'N_RATIO_Human', 'N_RATIO_Lightning', 'BA_RATIO_Human', 'BA_RATIO_Lightning']]
     header_list = df.columns.values.tolist()
     
     for i, iv in enumerate(iv_list):
@@ -82,3 +82,33 @@ def CorrMatrix(df, skip=0):
             pearson_p[x][y] = p_val_p
             
     return spearman_p, pearson_p, spearman_corr, pearson_corr
+
+
+def PredictRatios(dv, iv, y, x, estimator, geo_name):
+    """
+    Predict N_RATIO's or BA_RATIO's
+
+    Parameters
+    ----------
+    dv : VariableObjects.DependentVariable
+    iv : List() with VariableObjects.IndependentVariable
+    y : str - Dependent Variable Attribute ("N_RATIO_Human" or "BA_RATIO_Human")
+    x : list - Independent Variable Attribute(s) e.g. ["Altitude", "Population Density"]
+    estimator : sklearn.ensemble._forest.RandomForestRegressor
+    geo_name : str - name of the df column that describes the geographic id (e.g. NUTS_ID)
+    
+    Returns
+    -------
+    y_hat : The predictions from the RFM, per geo_name
+
+    """
+
+    df_predict, headers_ = AnalysisDataFrame(dv.data_with_nan, iv) # Initiate DataFrame to be used for the analysis
+
+    filtered = df_predict[df_predict[y].isna()] # Filter to the rows containing 'nan's
+    filtered = filtered[[geo_name] + list(x.columns)] # Filter all columns of interest
+    
+    y_hat = pd.DataFrame(filtered[geo_name]) # Initiate df to add predictions to
+    y_hat[f"Exp_{y}"] = estimator.predict(filtered.iloc[:,1:]) # Now Predict, using the RFM estimator
+    
+    return y_hat

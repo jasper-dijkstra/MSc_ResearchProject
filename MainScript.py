@@ -17,19 +17,22 @@ import os
 wdir = os.path.join(r'C:\Users\jaspd\Desktop\AM_1265_Research_Project\02ArcGIS\01_ArcGIS_Project') # Working Directory
 
 # Local Imports
-import ClassObjects as init
+import VariableObjects as init
 import ProcessData as pr
 import RandomForest as forest
 import PlottingData as plot
+
+
+from datetime import datetime
+t0 = datetime.now()
 
 # Behaviour Settings:
 fig_wdir = r"C:\Users\jaspd\Google Drive\VU\AM_1265_Research_Project_Earth_And_Climate\02_Report\Figures"
 
 determine_correlations = True
-plot_correlations = True
-
 perform_random_forest = True
 
+create_plots = False
 
 # ========================================
 # INPUT DATA
@@ -92,19 +95,10 @@ iv7 = init.IndependentVariable(ID = 7,
                                 units = "",
                                 attribute = "STD")
 
-# # Generated test dataset
-# iv999 = init.IndependentVariable(ID = 999, 
-#                                 name = 'Fictional', 
-#                                 author = 'Jasper Dijkstra', 
-#                                 filename = 'RandomTestData.xls', 
-#                                 source = 'xxxxxx')
-
-
 # 3. Sort input data to prepare for analysis:
-iv_list = [iv1, iv2, iv3, iv4, iv5, iv6, iv7]#, iv999] # list with independent variables
-df, headers = pr.AnalysisDataFrame(fires, iv_list) # Initiate DataFrame to be used for the analysis
+iv_list = [iv1, iv2, iv3, iv4, iv5, iv6, iv7] # list with independent variables
+df, headers = pr.AnalysisDataFrame(fires.data, iv_list) # Initiate DataFrame to be used for the analysis
 valid_vars = [ i for i in headers if i not in ["NUTS_ID", "N_RATIO_Lightning", "BA_RATIO_Lightning"]] # Specify vars containing useable (numerical) data
-
 
 
 #%%
@@ -116,6 +110,7 @@ spearman_p, pearson_p, spearman_corr, pearson_corr = pr.CorrMatrix(df[valid_vars
 spearman_corr[spearman_p > 0.05] = float('nan') # Remove non-significant correlations
 pearson_corr[pearson_p > 0.05] = float('nan') # Remove non-significant correlations
 
+#%%
 
 # 2. Perform a Random Forest Analysis
 if perform_random_forest:
@@ -123,66 +118,78 @@ if perform_random_forest:
     # df2 = normalize(df, normlist)
     # for i in normlist:
     #     df = df.assign(**{i:df2[i]})
+    
+    # RFM for N_RATIO:
     y = df['N_RATIO_Human'] # df column with dependent variable
-    #x = df.iloc[:,5:] # df columns with predictor variables
-    #x = df[["Human Land Impact", "Altitude", "Population Density", "Tree Cover Density", "BA Coefficient of Variation", "Terrain Ruggedness Index"]]
-    #x = df[['Population Density', 'Lightning Flashes per km2', 'Tree Cover Density', 'Terrain Ruggedness Index', 'Altitude']]
-    
-    # "Altitude"
-    # "BA Coefficient of Variation"
-    # "Human Land Impact"
-    # "Population Density"
-    # "Terrain Ruggedness Index"
-    # "Tree Cover Density"
-    
-    # The best options:
-    #x = df[["Altitude", "Population Density", "Terrain Ruggedness Index"]]
-    #x = df[["Altitude", "BA Coefficient of Variation", "Population Density", "Terrain Ruggedness Index"]]
     x = df[["Altitude", "Population Density", "Terrain Ruggedness Index", "Tree Cover Density"]]
-    #x = df[["Altitude", "BA Coefficient of Variation", "Population Density", "Terrain Ruggedness Index", "Tree Cover Density"]]
 
-
-    
     # Initialising a Random Forest Analysis
-    rfm = forest.RandomForest(x = x, y = y, labels = x.columns.to_list(), 
+    rfm_n = forest.RandomForest(x = x, y = y, labels = x.columns.to_list(), 
                        n_trees = 1000, # Number of trees to consider in default forest
                        test_size= 0.3, # Size (%) of the test data
                        #random_state=42, # Define random_state for reproducibility
                        scoring='explained_variance' # Scoring method to optimize
                        )
     
-    # Tune parameters with randomized grid search
-    # n_param_samples = amount of random samples to draw
-    rfm.RandomizedGridSearch(n_param_samples = 50)
-    
-    # Narrow down parameters even further, using Grid Search
-    rfm.GridSearch()
+    rfm_n.RandomizedGridSearch(n_param_samples = 50)  # Tune parameters with randomized grid search, n_param_samples = amount of random samples to draw
+    #rfm_n.GridSearch() # Narrow down parameters even further, using Grid Search
     #rfm.GridSearch(init_params='self') # redo a grid search, using its own optimal parameters
+    n_nuts3_hat = pr.PredictRatios(fires, iv_list, y.name, x, estimator = rfm_n.RandomGridSearch_Estimator, geo_name = "NUTS_ID")
     
-    #final_importance = rfm.GridSearch_Importances
+    # ====== REPEAT THE PROCES ABOVE ALSO FOR BURNED AREA =====
+    # RFM for BA_RATIO:
+    y = df['BA_RATIO_Human']
+    x = df[["Altitude", "BA Coefficient of Variation", "Human Land Impact", "Population Density", "Terrain Ruggedness Index"]]
+
+    # Initialising a Random Forest Analysis
+    rfm_ba = forest.RandomForest(x = x, y = y, labels = x.columns.to_list(), 
+                       n_trees = 1000, # Number of trees to consider in default forest
+                       test_size= 0.3, # Size (%) of the test data
+                       #random_state=42, # Define random_state for reproducibility
+                       scoring='explained_variance' # Scoring method to optimize
+                       )
+    rfm_ba.RandomizedGridSearch(n_param_samples = 50)
+    #rfm_ba.GridSearch()
+    ba_nuts3_hat = pr.PredictRatios(fires, iv_list, y.name, x, estimator = rfm_ba.RandomGridSearch_Estimator, geo_name = "NUTS_ID")
+
 
 
 #%% Create Plots
 
-# 1: Plot Correlation Matrices
-labels = ["Fire Incidence\n Ratio", "Burned Area\n Ratio", "Human Land\n Impact", "Mean Altitude", 
-          "Population Density", "Lightning Flashes\n per km2", "Tree Cover\n Density", "Burned Area Coeff.\n of Variation", "Terrain Ruggedness\n Index"]
+if create_plots:
+    # Plot Correlation Matrices
+    labels = ["Fire Incidence\n Ratio", "Burned Area\n Ratio", "Human Land\n Impact", "Mean Altitude", 
+              "Population Density", "Lightning Flashes\n per km2", "Tree Cover\n Density", "Burned Area Coeff.\n of Variation", "Terrain Ruggedness\n Index"]
+    
+    plot.CorrelationMatrix(data = pearson_corr, labels = labels, 
+                           save_path = os.path.join(fig_wdir + os.path.sep + "Figx_CorrMatrix_Pearson.png"))
+    plot.CorrelationMatrix(data = spearman_corr, labels = labels, 
+                           save_path = os.path.join(fig_wdir + os.path.sep + "Figx_CorrMatrix_Spearman.png"))
+    
+    
+    # Plot 6 x 2 Correlation Scatter Plots
+    xitems = ["N_RATIO_Human", "BA_RATIO_Human"]
+    yitems = ["Human Land Impact", "Altitude", "Population Density", "Tree Cover Density", "BA Coefficient of Variation", "Terrain Ruggedness Index"]
+    
+    xlabels = ["Fire Incidence Ratio", "Burned Area Ratio"]
+    ylabels = ["Human Land \n Impact", "Mean Altitude", "Population Density", "TCD", "BA Coef. of \n Variation", "TRI"]
+    
+    plot.CorrelationPlots(data = df, corr_idx = spearman_corr, xitems = xitems, yitems = yitems, 
+                     save_path = os.path.join(fig_wdir + os.path.sep + "Figx_CorrelationPlots.png"), 
+                     xlabels = xlabels, ylabels = ylabels)
+    
+    
+    # Plot Bar Charts with relative importance of variables
+    plot.FeatureImportance(ForestRegressor = rfm_n.RandomGridSearch_Estimator, 
+                           labels = rfm_n.labels, 
+                           save_path = os.path.join(fig_wdir + os.path.sep + 'Figx_RelativeImportanceBars'),
+                           ForestRegressor2 = rfm_ba.RandomGridSearch_Estimator, 
+                           labels2 = rfm_ba.labels)
+    
+    
+    # Plot the observations and predictions of the test sets of the random forest model 
+    plot.RandomForestPerformance(rfm_1 = rfm_n, rfm_1_estimator = rfm_n.RandomGridSearch_Estimator,
+                                 rfm_2 = rfm_ba, rfm_2_estimator = rfm_ba.RandomGridSearch_Estimator, 
+                                 save_path = os.path.join(fig_wdir + os.path.sep + r'Figx_PerformanceScatter.png'))
 
-plot.CorrelationMatrix(data = pearson_corr, labels = labels, 
-                       save_path = os.path.join(fig_wdir + os.path.sep + "Figx_CorrMatrrix_Pearson.png"))
-plot.CorrelationMatrix(data = spearman_corr, labels = labels, 
-                       save_path = os.path.join(fig_wdir + os.path.sep + "Figx_CorrMatrrix_Spearman.png"))
-
-
-# Plot 6 x 2 Correlation Scatter Plots
-xitems = ["N_RATIO_Human", "BA_RATIO_Human"]
-yitems = ["Human Land Impact", "Altitude", "Population Density", "Tree Cover Density", "BA Coefficient of Variation", "Terrain Ruggedness Index"]
-
-xlabels = ["Fire Incidence Ratio", "Burned Area Ratio"]
-ylabels = ["Human Land \n Impact", "Mean Altitude", "Population Density", "TCD", "BA Coef. of \n Variation", "TRI"]
-
-plot.CorrelationPlots(data = df, corr_idx = spearman_corr, xitems = xitems, yitems = yitems, 
-                 save_path = os.path.join(fig_wdir + os.path.sep + "Figx_CorrelationPlots.png"), 
-                 xlabels = xlabels, ylabels = ylabels)
-
-
+print(f"Total time elapsed: {datetime.now()-t0}")
