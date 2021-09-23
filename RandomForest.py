@@ -31,7 +31,7 @@ from sklearn.model_selection import train_test_split, RandomizedSearchCV, GridSe
 class RandomForest:
 
     def __init__(self, x, y, labels, n_trees = 1000, random_state = 13, 
-                 test_size = 0.3, scoring = 'explained_variance'):
+                 test_size = 0.3, scoring = 'explained_variance', param_dict=None):
         self.x = np.squeeze(np.array(x))
         self.y = np.squeeze(np.array(y))
         self.random_state = random_state
@@ -39,13 +39,17 @@ class RandomForest:
         self.n_trees = n_trees
         self.labels = labels
         self.scoring = scoring # Scoring Method to optimize
+        self.__paramdict__ = param_dict
         
         # Split Dataset into training and testing
         self.x_train, self.x_test, self.y_train, self.y_test = \
             train_test_split(self.x, self.y, test_size = test_size, \
                              random_state = random_state)
         
-        self.DefaultForest = self.InstantiateForest()
+        if not param_dict:
+            self.DefaultForest = self.InstantiateForest()
+        else:
+            self.DefaultForest = self.InstantiateForestWithParams(self.__paramdict__)
         
         return
 
@@ -55,6 +59,31 @@ class RandomForest:
         
         # Instantiate model with <n_trees> decision trees
         rf = RandomForestRegressor(n_estimators = self.n_trees, random_state = self.random_state)
+        rf.fit(self.x_train, self.y_train) # Train the model on training data
+        
+        # Check Out the performance of the model
+        r_squared, errors, accuracy = self.Evaluate(rf, print_output = True)
+        self.DefaultForest_performance = {'R-squared':r_squared, 
+                            'Mean Average Error (%)':np.nanmean(errors)*100,
+                            'Accuracy (%)':accuracy}
+        
+        # Now also get Feature Importances
+        self.DefaultForest_Importances = self.RelativeImportance(rf)
+        
+        return rf
+
+
+    def InstantiateForestWithParams(self, param_dict):
+        print('Instantiating Random Forest with specified parameters: \n')
+        
+        # Instantiate model with <n_trees> decision trees
+        rf = RandomForestRegressor(n_estimators = param_dict["n_estimators"],
+                                   bootstrap = param_dict["bootstrap"],
+                                   max_depth = param_dict['max_depth'],
+                                   max_features = param_dict['max_features'],
+                                   min_samples_leaf = param_dict["min_samples_leaf"],
+                                   min_samples_split = param_dict["min_samples_split"],
+                                   random_state = self.random_state)
         rf.fit(self.x_train, self.y_train) # Train the model on training data
         
         # Check Out the performance of the model

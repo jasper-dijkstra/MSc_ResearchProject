@@ -28,7 +28,7 @@ def ReadPopulationDensityTSV(tsv_path, dependent_variable_obj, years = list(np.a
     tsv_path : str
         Path to the tsv file, which can be found via: 
             https://ec.europa.eu/eurostat/web/products-datasets/-/demo_r_d3dens
-    dependent_variable_obj : ClassObjects.DependentVariable
+    dependent_variable_obj : VariableObjects.DependentVariable
         Object generated in Dependent Variable Class.
     years : int, list, optional
         The year(s) for which data has to be returned. This can be either an integer or a list with integers.
@@ -62,14 +62,14 @@ def ReadPopulationDensityTSV(tsv_path, dependent_variable_obj, years = list(np.a
     df = df.drop(df.columns[2], axis = 1)
     
     # Filter to the required NUTS regions
-    NUTS_Regions = list(dependent_variable_obj.data["NUTS_ID"]) # List required NUTS regions
+    NUTS_Regions = list(dependent_variable_obj.data_with_nan["NUTS_ID"]) # List required NUTS regions
     df = df[df["NUTS_ID"].isin(NUTS_Regions)] # Remove those that do not occur in the list
     
     # Filter to the required years
     df = pd.concat([df[df.columns[:2]], df[years]], axis = 1)
     
     # Add a NUTS area component to the df
-    area_df = dependent_variable_obj.data[["NUTS_ID", "NUTS_Area"]]
+    area_df = dependent_variable_obj.data_with_nan[["NUTS_ID", "NUTS_Area"]]
     df = pd.merge(df, area_df, on=['NUTS_ID'])
     
     # Apply the following steps for each year column in the df:

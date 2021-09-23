@@ -27,12 +27,13 @@ from datetime import datetime
 t0 = datetime.now()
 
 # Behaviour Settings:
-fig_wdir = r"C:\Users\jaspd\Google Drive\VU\AM_1265_Research_Project_Earth_And_Climate\02_Report\Figures"
+fig_wdir = r"G:\Mijn Drive\VU\AM_1265_Research_Project_Earth_And_Climate\02_Report\Figures"
 
-determine_correlations = True
+
+use_pre_defined_parameters = True
 perform_random_forest = True
 
-create_plots = False
+create_plots = True
 
 # ========================================
 # INPUT DATA
@@ -110,52 +111,78 @@ spearman_p, pearson_p, spearman_corr, pearson_corr = pr.CorrMatrix(df[valid_vars
 spearman_corr[spearman_p > 0.05] = float('nan') # Remove non-significant correlations
 pearson_corr[pearson_p > 0.05] = float('nan') # Remove non-significant correlations
 
-#%%
 
-# 2. Perform a Random Forest Analysis
-if perform_random_forest:
-    # If required, the data can be normalized
-    # df2 = normalize(df, normlist)
-    # for i in normlist:
-    #     df = df.assign(**{i:df2[i]})
+# ========================================
+# 2. Generate a Random Forest Model & predict ratio's
+if use_pre_defined_parameters: # Use pre-defined parameters
+    n_forest_params =  {"bootstrap" : True,
+                        "max_depth" : 80,
+                        "max_features" : "log2",
+                        "min_samples_leaf" : 5,
+                        "min_samples_split" : 12,
+                        "n_estimators" : 1500}
     
-    # RFM for N_RATIO:
-    y = df['N_RATIO_Human'] # df column with dependent variable
-    x = df[["Altitude", "Population Density", "Terrain Ruggedness Index", "Tree Cover Density"]]
+    ba_forest_params =  {"bootstrap" : True,
+                         "max_depth" : 20,
+                         "max_features" : "log2",
+                         "min_samples_leaf" : 5,
+                         "min_samples_split" : 12,
+                         "n_estimators" : 500}
+else: # Determine parameters as part of the process 
+    n_forest_params = None
+    ba_forest_params = None
+    
 
-    # Initialising a Random Forest Analysis
-    rfm_n = forest.RandomForest(x = x, y = y, labels = x.columns.to_list(), 
-                       n_trees = 1000, # Number of trees to consider in default forest
-                       test_size= 0.3, # Size (%) of the test data
-                       #random_state=42, # Define random_state for reproducibility
-                       scoring='explained_variance' # Scoring method to optimize
-                       )
-    
+# Start with Fire incidence ratio:
+y = df['N_RATIO_Human'] # df column with dependent variable
+x = df[["Altitude", "Population Density", "Terrain Ruggedness Index", "Tree Cover Density"]]
+
+rfm_n = forest.RandomForest(x = x, y = y, labels = x.columns.to_list(), 
+                            param_dict =  n_forest_params, # parameter values that have proven to be effective
+                            test_size= 0.3, # Size (%) of the test data
+                            #random_state=42, # Define random_state for reproducibility
+                            scoring='explained_variance') # Scoring method to optimize
+estimator_n = rfm_n.DefaultForest
+
+if not use_pre_defined_parameters:
     rfm_n.RandomizedGridSearch(n_param_samples = 50)  # Tune parameters with randomized grid search, n_param_samples = amount of random samples to draw
-    #rfm_n.GridSearch() # Narrow down parameters even further, using Grid Search
+    rfm_n.GridSearch() # Narrow down parameters even further, using Grid Search
     #rfm.GridSearch(init_params='self') # redo a grid search, using its own optimal parameters
-    n_nuts3_hat = pr.PredictRatios(fires, iv_list, y.name, x, estimator = rfm_n.RandomGridSearch_Estimator, geo_name = "NUTS_ID")
-    
-    # ====== REPEAT THE PROCES ABOVE ALSO FOR BURNED AREA =====
-    # RFM for BA_RATIO:
-    y = df['BA_RATIO_Human']
-    x = df[["Altitude", "BA Coefficient of Variation", "Human Land Impact", "Population Density", "Terrain Ruggedness Index"]]
+    estimator_n = rfm_n.GridSearch_Estimator
 
-    # Initialising a Random Forest Analysis
-    rfm_ba = forest.RandomForest(x = x, y = y, labels = x.columns.to_list(), 
-                       n_trees = 1000, # Number of trees to consider in default forest
-                       test_size= 0.3, # Size (%) of the test data
-                       #random_state=42, # Define random_state for reproducibility
-                       scoring='explained_variance' # Scoring method to optimize
-                       )
-    rfm_ba.RandomizedGridSearch(n_param_samples = 50)
-    #rfm_ba.GridSearch()
-    ba_nuts3_hat = pr.PredictRatios(fires, iv_list, y.name, x, estimator = rfm_ba.RandomGridSearch_Estimator, geo_name = "NUTS_ID")
+# Predict at NUTS3 level
+df_n_hat_nuts3 = pr.PredictRatios(fires, iv_list, y.name, x, 
+                                  estimator = estimator_n, # RandomForestRegressor
+                                  geo_name = "NUTS_ID")
 
 
+# Do the same for the Burned Area Ratio
+y = df['BA_RATIO_Human']
+x = df[["Altitude", "BA Coefficient of Variation", "Human Land Impact", "Population Density", "Terrain Ruggedness Index"]]
 
-#%% Create Plots
+rfm_ba = forest.RandomForest(x = x, y = y, labels = x.columns.to_list(), 
+                            param_dict =  ba_forest_params, # parameter values that have proven to be effective
+                            test_size= 0.3, # Size (%) of the test data
+                            #random_state=42, # Define random_state for reproducibility
+                            scoring='explained_variance') # Scoring method to optimize
+estimator_ba = rfm_ba.DefaultForest
 
+if not use_pre_defined_parameters:
+    rfm_ba.RandomizedGridSearch(n_param_samples = 50)  # Tune parameters with randomized grid search, n_param_samples = amount of random samples to draw
+    rfm_ba.GridSearch() # Narrow down parameters even further, using Grid Search
+    #rfm.GridSearch(init_params='self') # redo a grid search, using its own optimal parameters
+    estimator_ba = rfm_ba.GridSearch_Estimator
+
+# Predict at NUTS3 level
+df_ba_hat_nuts3 = pr.PredictRatios(fires, iv_list, y.name, x, 
+                                   estimator = estimator_ba, # RandomForestRegressor
+                                   geo_name = "NUTS_ID")
+
+
+#%%
+# ========================================
+# Create Plots
+# ========================================
 if create_plots:
     # Plot Correlation Matrices
     labels = ["Fire Incidence\n Ratio", "Burned Area\n Ratio", "Human Land\n Impact", "Mean Altitude", 
@@ -175,21 +202,21 @@ if create_plots:
     ylabels = ["Human Land \n Impact", "Mean Altitude", "Population Density", "TCD", "BA Coef. of \n Variation", "TRI"]
     
     plot.CorrelationPlots(data = df, corr_idx = spearman_corr, xitems = xitems, yitems = yitems, 
-                     save_path = os.path.join(fig_wdir + os.path.sep + "Figx_CorrelationPlots.png"), 
-                     xlabels = xlabels, ylabels = ylabels)
+                         save_path = os.path.join(fig_wdir + os.path.sep + "Figx_CorrelationPlots.png"), 
+                         xlabels = xlabels, ylabels = ylabels)
     
     
     # Plot Bar Charts with relative importance of variables
-    plot.FeatureImportance(ForestRegressor = rfm_n.RandomGridSearch_Estimator, 
+    plot.FeatureImportance(ForestRegressor = estimator_n, 
                            labels = rfm_n.labels, 
                            save_path = os.path.join(fig_wdir + os.path.sep + 'Figx_RelativeImportanceBars'),
-                           ForestRegressor2 = rfm_ba.RandomGridSearch_Estimator, 
+                           ForestRegressor2 = estimator_ba, 
                            labels2 = rfm_ba.labels)
     
     
     # Plot the observations and predictions of the test sets of the random forest model 
-    plot.RandomForestPerformance(rfm_1 = rfm_n, rfm_1_estimator = rfm_n.RandomGridSearch_Estimator,
-                                 rfm_2 = rfm_ba, rfm_2_estimator = rfm_ba.RandomGridSearch_Estimator, 
+    plot.RandomForestPerformance(rfm_1 = rfm_n, rfm_1_estimator = estimator_n,
+                                 rfm_2 = rfm_ba, rfm_2_estimator = estimator_ba, 
                                  save_path = os.path.join(fig_wdir + os.path.sep + r'Figx_PerformanceScatter.png'))
 
 print(f"Total time elapsed: {datetime.now()-t0}")
