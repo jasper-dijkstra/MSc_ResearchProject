@@ -84,7 +84,7 @@ def CorrMatrix(df, skip=0):
     return spearman_p, pearson_p, spearman_corr, pearson_corr
 
 
-def PredictRatios(dv, iv, y, x, estimator, geo_name):
+def PredictPerZone(dv, iv, y, x, estimator, geo_name = "NUTS_ID"):
     """
     Predict N_RATIO's or BA_RATIO's
 
@@ -112,3 +112,4 @@ def PredictRatios(dv, iv, y, x, estimator, geo_name):
     y_hat[f"Exp_{y}"] = estimator.predict(filtered.iloc[:,1:]) # Now Predict, using the RFM estimator
     
     return y_hat
+

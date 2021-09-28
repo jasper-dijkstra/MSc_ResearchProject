@@ -12,6 +12,7 @@ This model imports data of several independent variables and then uses a multiva
 
 # Built-in imports
 import os
+import pandas as pd
 
 # Global Variables, that should work in all local scripts
 wdir = os.path.join(r'C:\Users\jaspd\Desktop\AM_1265_Research_Project\02ArcGIS\01_ArcGIS_Project') # Working Directory
@@ -30,10 +31,9 @@ t0 = datetime.now()
 fig_wdir = r"G:\Mijn Drive\VU\AM_1265_Research_Project_Earth_And_Climate\02_Report\Figures"
 
 
-use_pre_defined_parameters = True
-perform_random_forest = True
-
-create_plots = True
+use_pre_defined_parameters = True # If false, parameters will be determined automatically
+export_predictions = True # If true, predicted ratio's will be exported to a csv file
+create_plots = False
 
 # ========================================
 # INPUT DATA
@@ -151,9 +151,8 @@ if not use_pre_defined_parameters:
     estimator_n = rfm_n.GridSearch_Estimator
 
 # Predict at NUTS3 level
-df_n_hat_nuts3 = pr.PredictRatios(fires, iv_list, y.name, x, 
-                                  estimator = estimator_n, # RandomForestRegressor
-                                  geo_name = "NUTS_ID")
+df_n_hat_nuts3 = pr.PredictPerZone(fires, iv_list, y.name, x, 
+                                  estimator = estimator_n) # RandomForestRegressor
 
 
 # Do the same for the Burned Area Ratio
@@ -174,9 +173,32 @@ if not use_pre_defined_parameters:
     estimator_ba = rfm_ba.GridSearch_Estimator
 
 # Predict at NUTS3 level
-df_ba_hat_nuts3 = pr.PredictRatios(fires, iv_list, y.name, x, 
-                                   estimator = estimator_ba, # RandomForestRegressor
-                                   geo_name = "NUTS_ID")
+df_ba_hat_nuts3 = pr.PredictPerZone(fires, iv_list, y.name, x, 
+                                   estimator = estimator_ba) # RandomForestRegressor
+
+
+
+
+
+
+
+
+
+
+#%%
+
+
+if export_predictions:
+    out_csv = fires.data_with_nan[["NUTS_ID", "CNTR_CODE", "NUTS_Area", "N_RATIO_Human", "BA_RATIO_Human"]]
+    out_csv = pd.merge(out_csv, df_n_hat_nuts3, on=['NUTS_ID'], how = 'outer') # Append n_ratios to all data
+    out_csv = pd.merge(out_csv, df_n_hat_nuts3, on=['NUTS_ID'], how = 'outer') # Also append ba_ratios to it
+    
+    out_csv.to_csv(os.path.join(wdir + os.path.sep + r"a0Data\b03ExcelCSV\FireRatios_Predicted.csv"),
+                   sep = ';',
+                   decimal = '.')
+    
+
+
 
 
 #%%

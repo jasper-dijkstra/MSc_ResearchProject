@@ -35,7 +35,7 @@ def crs(file):
     return
 
 
-def ZonalStatistics(wdir, in_zones_shp, in_value_raster, out_xls):
+def ZonalStatistics(wdir, in_zones_shp, in_value_raster, out_xls, value_field = "NUTS_ID"):
     """
 
     Parameters
@@ -78,10 +78,10 @@ def ZonalStatistics(wdir, in_zones_shp, in_value_raster, out_xls):
         in_value_raster = resampled_in_values
         
     # Process: Polygon to Raster (Polygon to Raster) (conversion)
-    print("Identifying all NUTS zones")
+    print(f"Identifying all {value_field} zones")
     with arcpy.EnvManager(snapRaster = in_value_raster):
         arcpy.conversion.PolygonToRaster(in_features = in_zones_shp, 
-                                         value_field = "NUTS_ID", 
+                                         value_field = value_field, 
                                          out_rasterdataset = NUTS3_zone_raster, 
                                          cell_assignment = "CELL_CENTER", 
                                          priority_field = "NONE", 
@@ -91,7 +91,7 @@ def ZonalStatistics(wdir, in_zones_shp, in_value_raster, out_xls):
     print("Performing a zonal statistics operation")
     zone_raster = arcpy.Raster(NUTS3_zone_raster)
     arcpy.sa.ZonalStatisticsAsTable(in_zone_data = zone_raster, 
-                                    zone_field = "NUTS_ID", 
+                                    zone_field = value_field, 
                                     in_value_raster = in_value_raster, 
                                     out_table = table, 
                                     ignore_nodata = "DATA", 
