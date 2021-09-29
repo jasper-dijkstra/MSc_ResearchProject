@@ -14,15 +14,15 @@ import pandas as pd
 from scipy.stats import spearmanr, pearsonr
 
 
-def AnalysisDataFrame(data, iv_list):
+def AnalysisDataFrame(df, iv_list, geo_name = "NUTS_ID"):
     """
     Function to generate dataframe with all attributes of interest for all independent variables
     
     Parameters
     ----------
-    data : pd.DataFrame resulting from a dependent variable object.
+    df : pd.DataFrame containing a 'geo_name' to append iv data to.
     iv_list : List with Independent Variable Objects
-    attribute : Attributes from iv's to use to explain dependent variable 
+    geo_name : name of column containing geographic ID. The default is "NUTS_ID"
         use one of: "MEAN", "STD", "SUM", "Variety", "MEDIAN".
 
     Returns
@@ -31,11 +31,10 @@ def AnalysisDataFrame(data, iv_list):
 
     """
     
-    df = data[['NUTS_ID', 'N_RATIO_Human', 'N_RATIO_Lightning', 'BA_RATIO_Human', 'BA_RATIO_Lightning']]
     header_list = df.columns.values.tolist()
     
     for i, iv in enumerate(iv_list):
-        df = pd.merge(df, iv.data, on=['NUTS_ID']) # Append to the dependent variable dataframe
+        df = pd.merge(df, iv.data, on=[geo_name]) # Append to the dependent variable dataframe
         df.rename(columns = {iv.data.columns[-1] : iv.name}, inplace = True)      
         header_list.append(iv.name)
         
@@ -84,7 +83,7 @@ def CorrMatrix(df, skip=0):
     return spearman_p, pearson_p, spearman_corr, pearson_corr
 
 
-def PredictPerZone(dv, iv, y, x, estimator, geo_name = "NUTS_ID"):
+def PredictNUTSZone(dv, iv, y, x, estimator, geo_name = "NUTS_ID"):
     """
     Predict N_RATIO's or BA_RATIO's
 

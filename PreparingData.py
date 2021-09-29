@@ -113,7 +113,7 @@ def ZonalStatistics(wdir, in_zones_shp, in_value_raster, out_xls, value_field = 
     return
 
 
-def BA_CV_FromModis(wdir, in_zones_shp, filename):
+def BA_CV_FromModis(wdir, in_zones_shp, filename, value_field = "NUTS_ID"):
 
     # Set Environment Setting
     arcpy.env.workspace = os.path.join(wdir + r'\\a0Data\\a03TempData.gdb')
@@ -126,7 +126,7 @@ def BA_CV_FromModis(wdir, in_zones_shp, filename):
 
     # Open the zones shapefile as a df with all NUTS_ID's
     df = pd.DataFrame.spatial.from_featureclass(in_zones_shp)
-    df = df[["NUTS_ID", "NAME_LATN"]]
+    df = df[[value_field]]
     
     # Get a list of all tif files in the MODIS BA folder
     all_files = glob.glob(os.path.join(wdir + os.path.sep + r"a0Data\b01Rasters\06_MODIS_BA\*.tif"))
@@ -135,7 +135,7 @@ def BA_CV_FromModis(wdir, in_zones_shp, filename):
     print("Identifying all NUTS zones")
     with arcpy.EnvManager(snapRaster = all_files[0]):
         arcpy.conversion.PolygonToRaster(in_features = in_zones_shp, 
-                                         value_field = "NUTS_ID", 
+                                         value_field = value_field, 
                                          out_rasterdataset = NUTS3_zone_raster, 
                                          cell_assignment = "CELL_CENTER", 
                                          priority_field = "NONE", 
@@ -149,7 +149,7 @@ def BA_CV_FromModis(wdir, in_zones_shp, filename):
         
         # Zonal Statistiscs
         arcpy.sa.ZonalStatisticsAsTable(in_zone_data = zone_raster, 
-                                        zone_field = "NUTS_ID", 
+                                        zone_field = value_field, 
                                         in_value_raster = file, 
                                         out_table = table, 
                                         ignore_nodata = "DATA", 
@@ -158,14 +158,14 @@ def BA_CV_FromModis(wdir, in_zones_shp, filename):
         
         # Return the created statistics table as a DataFrame
         OIDFieldName = arcpy.Describe(table).OIDFieldName
-        input_fields = ["NUTS_ID", "SUM"]
+        input_fields = [value_field, "SUM"]
         final_fields = [OIDFieldName] + input_fields
         np_array = arcpy.da.TableToNumPyArray(table, final_fields)#, query="", skip_nulls=False, null_values=None)
         object_id_index = np_array[OIDFieldName]
         table_df = pd.DataFrame(np_array, index=object_id_index, columns=input_fields)
         
         # Append this to the actual dataframe
-        df = pd.merge(df, table_df, on=['NUTS_ID'])
+        df = pd.merge(df, table_df, on=[value_field])
         df = df.rename(columns = {"SUM" : f"SUM{year}"})
         
     # Calculate the coefficient of variation

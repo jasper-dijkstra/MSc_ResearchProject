@@ -21,6 +21,7 @@ wdir = os.path.join(r'C:\Users\jaspd\Desktop\AM_1265_Research_Project\02ArcGIS\0
 import VariableObjects as init
 import ProcessData as pr
 import RandomForest as forest
+import PredictOtherZones as predict
 import PlottingData as plot
 
 
@@ -32,7 +33,9 @@ fig_wdir = r"G:\Mijn Drive\VU\AM_1265_Research_Project_Earth_And_Climate\02_Repo
 
 
 use_pre_defined_parameters = True # If false, parameters will be determined automatically
+predict_other_zones = True # If true, fire ratios for other zones than NUTS3 will be estimated as well.
 export_predictions = True # If true, predicted ratio's will be exported to a csv file
+
 create_plots = False
 
 # ========================================
@@ -98,7 +101,8 @@ iv7 = init.IndependentVariable(ID = 7,
 
 # 3. Sort input data to prepare for analysis:
 iv_list = [iv1, iv2, iv3, iv4, iv5, iv6, iv7] # list with independent variables
-df, headers = pr.AnalysisDataFrame(fires.data, iv_list) # Initiate DataFrame to be used for the analysis
+df, headers = pr.AnalysisDataFrame(fires.data[['NUTS_ID', 'N_RATIO_Human', 'N_RATIO_Lightning', 'BA_RATIO_Human', 'BA_RATIO_Lightning']],
+                                   iv_list) # Initiate DataFrame to be used for the analysis
 valid_vars = [ i for i in headers if i not in ["NUTS_ID", "N_RATIO_Lightning", "BA_RATIO_Lightning"]] # Specify vars containing useable (numerical) data
 
 
@@ -151,7 +155,7 @@ if not use_pre_defined_parameters:
     estimator_n = rfm_n.GridSearch_Estimator
 
 # Predict at NUTS3 level
-df_n_hat_nuts3 = pr.PredictPerZone(fires, iv_list, y.name, x, 
+df_n_hat_nuts3 = pr.PredictNUTSZone(fires, iv_list, y.name, x, 
                                   estimator = estimator_n) # RandomForestRegressor
 
 
@@ -170,22 +174,22 @@ if not use_pre_defined_parameters:
     rfm_ba.RandomizedGridSearch(n_param_samples = 50)  # Tune parameters with randomized grid search, n_param_samples = amount of random samples to draw
     rfm_ba.GridSearch() # Narrow down parameters even further, using Grid Search
     #rfm.GridSearch(init_params='self') # redo a grid search, using its own optimal parameters
-    estimator_ba = rfm_ba.GridSearch_Estimator
+    estimator_ba = rfm_ba.GridSearch_Estimator #!!! Automatically determine which estimator is present
 
 # Predict at NUTS3 level
-df_ba_hat_nuts3 = pr.PredictPerZone(fires, iv_list, y.name, x, 
+df_ba_hat_nuts3 = pr.PredictNUTSZone(fires, iv_list, y.name, x, 
                                    estimator = estimator_ba) # RandomForestRegressor
 
 
+if predict_other_zones:
+    country_df = predict.PredictOtherZones(os.path.join(wdir + os.path.sep + r"a0Data\b02Shapes\country_shps.shp"), 
+                                           value_field = "CNTR_CODE", 
+                                           estimator_n = estimator_n, 
+                                           estimator_ba = estimator_ba)
 
-
-
-
-
-
-
-
-#%%
+    country_df.to_csv(os.path.join(wdir + os.path.sep + r"a0Data\b03ExcelCSV\FireRatios_Predicted_Country.csv"),
+                   sep = ';',
+                   decimal = '.')
 
 
 if export_predictions:
@@ -193,7 +197,7 @@ if export_predictions:
     out_csv = pd.merge(out_csv, df_n_hat_nuts3, on=['NUTS_ID'], how = 'outer') # Append n_ratios to all data
     out_csv = pd.merge(out_csv, df_n_hat_nuts3, on=['NUTS_ID'], how = 'outer') # Also append ba_ratios to it
     
-    out_csv.to_csv(os.path.join(wdir + os.path.sep + r"a0Data\b03ExcelCSV\FireRatios_Predicted.csv"),
+    out_csv.to_csv(os.path.join(wdir + os.path.sep + r"a0Data\b03ExcelCSV\FireRatios_Predicted_NUTS3.csv"),
                    sep = ';',
                    decimal = '.')
     
