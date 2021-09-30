@@ -4,17 +4,24 @@ Created on Mon May 10 13:47:06 2021
 
 @author: Jasper Dijkstra
 
-This model imports data of several independent variables and then uses a multivariate regression analysis to compare it to the dependend variable: 
+This model imports data of several independent variables and then uses a Random Forest analysis to compare it to the dependend variable: 
     European Fire Data from the European Fire Database (https://effis.jrc.ec.europa.eu/)
 
+Please read the projects' wiki on GitHub (https://github.com/jasper-dijkstra/MSc_ResearchProject/wiki) on how to build the
+directory structure required for the model to import all data
+
+In this script, only change the wdir variable (line 25) and those specified under "Define Input Data / Variables"
 
 """
-
+# ===============================
+# Import Libraries
+# ===============================
 # Built-in imports
 import os
 import pandas as pd
+from datetime import datetime
 
-# Global Variables, that should work in all local scripts
+# Define Working Firectory, that should work in all local scripts
 wdir = os.path.join(r'C:\Users\jaspd\Desktop\AM_1265_Research_Project\02ArcGIS\01_ArcGIS_Project') # Working Directory
 
 # Local Imports
@@ -24,31 +31,68 @@ import RandomForest as forest
 import PredictOtherZones as predict
 import PlottingData as plot
 
+# ===============================
+# Specify Functions
+# ===============================
+def SortData(fires, iv_list):
+    # Sort input data to prepare for analysis:
+    df, headers = pr.AnalysisDataFrame(fires.data[['NUTS_ID', 'N_RATIO_Human', 'N_RATIO_Lightning', 'BA_RATIO_Human', 'BA_RATIO_Lightning']],
+                                       iv_list) # Initiate DataFrame to be used for the analysis
+    valid_vars = [ i for i in headers if i not in ["NUTS_ID", "N_RATIO_Lightning", "BA_RATIO_Lightning"]] # Specify vars containing useable (numerical) data
+    
+    return df, valid_vars
 
-from datetime import datetime
-t0 = datetime.now()
 
-# Behaviour Settings:
+def DetermineCorrelations(df, valid_vars):
+    # Determine correlations and statistical significance (alpha < 0.05)
+    spearman_p, pearson_p, spearman_corr, pearson_corr = pr.CorrMatrix(df[valid_vars]) # Generate correlation matrices for all variables
+    spearman_corr[spearman_p > 0.05] = float('nan') # Remove non-significant correlations
+    pearson_corr[pearson_p > 0.05] = float('nan') # Remove non-significant correlations
+    
+    return spearman_p, pearson_p, spearman_corr, pearson_corr
+
+
+def RandomForestAnalysis(x, y, param_dict = None):
+    """Instantiate Random Forest Analysis"""
+    rfm = forest.RandomForest(x = x, 
+                              y = y, 
+                              labels = x.columns.to_list(), 
+                              param_dict =  param_dict, # parameter values that have proven to be effective
+                              test_size= 0.3, # Size (%) of the test data
+                              #random_state=42, # Define random_state for reproducibility
+                              scoring='explained_variance') # Scoring method to optimize
+    
+    if not param_dict: # If no parameter dict has been provided, determine optimal parameters automatically
+        rfm.RandomizedGridSearch(n_param_samples = 50)  # Tune parameters with randomized grid search, n_param_samples = amount of random samples to draw
+        rfm.GridSearch() # Narrow down parameters even further, using Grid Search
+        #rfm.GridSearch(init_params='self') # redo a grid search, using its own optimal parameters
+    
+    # Determine estimator to use:
+    if hasattr(rfm, 'GridSearch_Estimator'):
+        estimator = rfm.GridSearch_Estimator
+    elif hasattr(rfm, 'RandomGridSearch_Estimator'):
+        estimator = rfm.RandomGridSearch_Estimator
+    else:
+        estimator = rfm.DefaultForest
+    
+    return rfm, estimator
+
+
+# ===============================
+# Define Input Data / Variables
+# ===============================
+t0 = datetime.now() # Register starting time of the model 
+
+# Directory where output figures should be stored
 fig_wdir = r"G:\Mijn Drive\VU\AM_1265_Research_Project_Earth_And_Climate\02_Report\Figures"
 
-
-use_pre_defined_parameters = True # If false, parameters will be determined automatically
 predict_other_zones = True # If true, fire ratios for other zones than NUTS3 will be estimated as well.
-export_predictions = True # If true, predicted ratio's will be exported to a csv file
+create_plots = False  # If true, data plots will be generated.
 
-create_plots = False
-
-# ========================================
-# INPUT DATA
-# ========================================
-# 1. Reading the fire data shp as dependent variable object
-
+# Reading the fire data shp as dependent variable object (specify filepath):
 fires = init.DependentVariable(filepath = os.path.join(wdir + os.path.sep + r"a0Data\b02Shapes\NUTS_fire2.shp"))
-dv_attributes = fires.data_header
-cntrs = fires.countries
 
-
-# 2. Generating Independent Variable Objects, from independent variable datasets
+# 2. Generating Independent Variable Objects, from independent variable datasets (specify function arguments)
 iv1 = init.IndependentVariable(ID = 1, 
                                 name = 'Human Land Impact',
                                 author = 'Jacobsen et al. 2019',
@@ -99,86 +143,65 @@ iv7 = init.IndependentVariable(ID = 7,
                                 units = "",
                                 attribute = "STD")
 
-# 3. Sort input data to prepare for analysis:
-iv_list = [iv1, iv2, iv3, iv4, iv5, iv6, iv7] # list with independent variables
-df, headers = pr.AnalysisDataFrame(fires.data[['NUTS_ID', 'N_RATIO_Human', 'N_RATIO_Lightning', 'BA_RATIO_Human', 'BA_RATIO_Lightning']],
-                                   iv_list) # Initiate DataFrame to be used for the analysis
-valid_vars = [ i for i in headers if i not in ["NUTS_ID", "N_RATIO_Lightning", "BA_RATIO_Lightning"]] # Specify vars containing useable (numerical) data
-
-
-#%%
-# ========================================
+# ===============================
 # Analysis
+# ===============================
+iv_list = [iv1, iv2, iv3, iv4, iv5, iv6, iv7] # list all defined independent variables
+
+df, valid_vars = SortData(fires, iv_list) # Sort required data to pd.DataFrame
+spearman_p, pearson_p, spearman_corr, pearson_corr = DetermineCorrelations(df, valid_vars) # Determine data correlations
+
 # ========================================
-# 1. Determine correlations and statistical significance (alpha < 0.05)
-spearman_p, pearson_p, spearman_corr, pearson_corr = pr.CorrMatrix(df[valid_vars]) # Generate correlation matrices for all variables
-spearman_corr[spearman_p > 0.05] = float('nan') # Remove non-significant correlations
-pearson_corr[pearson_p > 0.05] = float('nan') # Remove non-significant correlations
+# Perform Random Forest Analysis & Make predictions for Fire Incidence
 
+n_forest_params =  {"bootstrap" : True,
+                    "max_depth" : 80,
+                    "max_features" : "log2",
+                    "min_samples_leaf" : 5,
+                    "min_samples_split" : 12,
+                    "n_estimators" : 1500}
 
-# ========================================
-# 2. Generate a Random Forest Model & predict ratio's
-if use_pre_defined_parameters: # Use pre-defined parameters
-    n_forest_params =  {"bootstrap" : True,
-                        "max_depth" : 80,
-                        "max_features" : "log2",
-                        "min_samples_leaf" : 5,
-                        "min_samples_split" : 12,
-                        "n_estimators" : 1500}
-    
-    ba_forest_params =  {"bootstrap" : True,
-                         "max_depth" : 20,
-                         "max_features" : "log2",
-                         "min_samples_leaf" : 5,
-                         "min_samples_split" : 12,
-                         "n_estimators" : 500}
-else: # Determine parameters as part of the process 
-    n_forest_params = None
-    ba_forest_params = None
-    
-
-# Start with Fire incidence ratio:
 y = df['N_RATIO_Human'] # df column with dependent variable
 x = df[["Altitude", "Population Density", "Terrain Ruggedness Index", "Tree Cover Density"]]
 
-rfm_n = forest.RandomForest(x = x, y = y, labels = x.columns.to_list(), 
-                            param_dict =  n_forest_params, # parameter values that have proven to be effective
-                            test_size= 0.3, # Size (%) of the test data
-                            #random_state=42, # Define random_state for reproducibility
-                            scoring='explained_variance') # Scoring method to optimize
-estimator_n = rfm_n.DefaultForest
+rfm_n, estimator_n = RandomForestAnalysis(x, y, param_dict = n_forest_params)
+n_hat_nuts3 = pr.PredictNUTSZone(fires, iv_list, y.name, x, estimator = estimator_n)
 
-if not use_pre_defined_parameters:
-    rfm_n.RandomizedGridSearch(n_param_samples = 50)  # Tune parameters with randomized grid search, n_param_samples = amount of random samples to draw
-    rfm_n.GridSearch() # Narrow down parameters even further, using Grid Search
-    #rfm.GridSearch(init_params='self') # redo a grid search, using its own optimal parameters
-    estimator_n = rfm_n.GridSearch_Estimator
+# ========================================
+# Perform Random Forest Analysis & Make predictions for Burned Area & Quantify (km2) this with MODIS data
 
-# Predict at NUTS3 level
-df_n_hat_nuts3 = pr.PredictNUTSZone(fires, iv_list, y.name, x, 
-                                  estimator = estimator_n) # RandomForestRegressor
+ba_forest_params =  {"bootstrap" : True,
+                     "max_depth" : 20,
+                     "max_features" : "log2",
+                     "min_samples_leaf" : 5,
+                     "min_samples_split" : 12,
+                     "n_estimators" : 500}
 
-
-# Do the same for the Burned Area Ratio
-y = df['BA_RATIO_Human']
+y = df['BA_RATIO_Human'] # df column with dependent variable
 x = df[["Altitude", "BA Coefficient of Variation", "Human Land Impact", "Population Density", "Terrain Ruggedness Index"]]
 
-rfm_ba = forest.RandomForest(x = x, y = y, labels = x.columns.to_list(), 
-                            param_dict =  ba_forest_params, # parameter values that have proven to be effective
-                            test_size= 0.3, # Size (%) of the test data
-                            #random_state=42, # Define random_state for reproducibility
-                            scoring='explained_variance') # Scoring method to optimize
-estimator_ba = rfm_ba.DefaultForest
+rfm_ba, estimator_ba = RandomForestAnalysis(x, y, param_dict = ba_forest_params)
+ba_hat_nuts3 = pr.PredictNUTSZone(fires, iv_list, y.name, x, estimator = estimator_ba)
 
-if not use_pre_defined_parameters:
-    rfm_ba.RandomizedGridSearch(n_param_samples = 50)  # Tune parameters with randomized grid search, n_param_samples = amount of random samples to draw
-    rfm_ba.GridSearch() # Narrow down parameters even further, using Grid Search
-    #rfm.GridSearch(init_params='self') # redo a grid search, using its own optimal parameters
-    estimator_ba = rfm_ba.GridSearch_Estimator #!!! Automatically determine which estimator is present
+# Quantify BA With MODIS
+ratioBA = fires.data_with_nan[["NUTS_ID", "BA_RATIO_Human", "NUTS_Area"]].copy() # Get BA ratios in new df
+ratioBA = pd.merge(ratioBA, ba_hat_nuts3, on = ["NUTS_ID"], how = 'outer') # Append the predicted ones to it
+ratioBA["BA_RATIO_Human"] = ratioBA["BA_RATIO_Human"].fillna(ratioBA["Exp_BA_RATIO_Human"]) # Fill observation gaps with predictions
+ratioBA = ratioBA.drop(["Exp_BA_RATIO_Human"], axis=1) # Drop predictions column
+ratioBA = pr.QuantifyBA(Predictions_df = ratioBA, MODIS_df = iv6.metadata[["NUTS_ID", "mean"]], 
+                        MODIS_att = "mean", geo_name = "NUTS_ID")
 
-# Predict at NUTS3 level
-df_ba_hat_nuts3 = pr.PredictNUTSZone(fires, iv_list, y.name, x, 
-                                   estimator = estimator_ba) # RandomForestRegressor
+# ========================================
+# Export Predicted Fire Incidence & Burned Area to csv
+out_csv = fires.data_with_nan[["NUTS_ID", "CNTR_CODE", "NUTS_Area", "N_RATIO_Human", "BA_RATIO_Human"]]
+out_csv = pd.merge(out_csv, n_hat_nuts3, on=['NUTS_ID'], how = 'outer') # Append n_ratios to all data
+out_csv = pd.merge(out_csv, ratioBA, on=['NUTS_ID'], how = 'outer') # Also append ba_ratios to it
+
+out_csv.to_csv(os.path.join(wdir + os.path.sep + r"a0Data\b03ExcelCSV\FireRatios_Predicted_NUTS3.csv"),
+               sep = ';',
+               decimal = '.')
+print("Saved Predicted Fire Incidence & Burned Area to: \n {} \n".format(os.path.join(wdir + os.path.sep + r'a0Data\b03ExcelCSV\FireRatios_Predicted_NUTS3.csv')))
+
 
 
 if predict_other_zones:
@@ -191,23 +214,12 @@ if predict_other_zones:
                    sep = ';',
                    decimal = '.')
 
-
-if export_predictions:
-    out_csv = fires.data_with_nan[["NUTS_ID", "CNTR_CODE", "NUTS_Area", "N_RATIO_Human", "BA_RATIO_Human"]]
-    out_csv = pd.merge(out_csv, df_n_hat_nuts3, on=['NUTS_ID'], how = 'outer') # Append n_ratios to all data
-    out_csv = pd.merge(out_csv, df_n_hat_nuts3, on=['NUTS_ID'], how = 'outer') # Also append ba_ratios to it
-    
-    out_csv.to_csv(os.path.join(wdir + os.path.sep + r"a0Data\b03ExcelCSV\FireRatios_Predicted_NUTS3.csv"),
-                   sep = ';',
-                   decimal = '.')
-    
+    print("Saved Predicted Country level Fire Incidence & Burned Area to: \n {} \n".format(wdir + os.path.sep + r"a0Data\b03ExcelCSV\FireRatios_Predicted_Country.csv"))
 
 
 
-
-#%%
 # ========================================
-# Create Plots
+# Create Plots (if desired)
 # ========================================
 if create_plots:
     # Plot Correlation Matrices

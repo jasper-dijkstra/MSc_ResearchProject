@@ -112,3 +112,37 @@ def PredictNUTSZone(dv, iv, y, x, estimator, geo_name = "NUTS_ID"):
     
     return y_hat
 
+
+def QuantifyBA(Predictions_df, MODIS_df, pred_att = "BA_RATIO_Human", MODIS_att = "mean", geo_name = "NUTS_ID"):
+    """
+    Quantify the burned area (km2) based on the (predicted) ratio's
+
+    Parameters
+    ----------
+    Predictions_df : pd.DataFrame
+        Dataframe containing at least a column ["BA_RATIO_Human"] for each [geo_name] and an 'area' column whose name endswith *Area
+    MODIS_df : pd.DataFrame
+        Dataframe containing at least a column [MODIS_att] with BA data, for each [geo_name].
+    MODIS_att : str, optional
+        Name of column in MODIS_df containing the BA values. The default is "mean".
+    geo_name : str, optional
+        Unique geo-ID of each zone. The default is "NUTS_ID".
+
+    Returns
+    -------
+    MODIS_df : pd.DataFrame
+        Dataframe containing the absolute human and lightning BA, and the area normalized human and lightning BA
+
+    """
+    
+    area_col = [col for col in Predictions_df if col.endswith('Area')][0] # Determine the name of the  'area' column
+    
+    df = pd.merge(Predictions_df, MODIS_df, on = geo_name) # Append MODIS data
+    
+    df["HumanBA_km2"] = df[pred_att] * df[MODIS_att] # Compute total amount of Human caused BA
+    df["LightningBA_km2"] = (1 - df[pred_att]) * df[MODIS_att] # Compute total amount of Lightning caused BA
+    
+    df["HumanBA_per1000km2"] = df["HumanBA_km2"] / (Predictions_df[area_col] / 1000) # Aply area normalization
+    df["LightningBA_per1000km2"] = df["LightningBA_km2"] / (Predictions_df[area_col] / 1000) # Aply area normalization
+    
+    return df
