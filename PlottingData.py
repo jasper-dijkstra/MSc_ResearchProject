@@ -180,7 +180,7 @@ def FeatureImportance(ForestRegressor, labels, save_path, ForestRegressor2=None,
 
 
 
-def RandomForestPerformance(rfm_1, rfm_1_estimator, rfm_2, rfm_2_estimator, save_path):
+def RandomForestPerformance(rfm_1, rfm_1_estimator, rfm_2, rfm_2_estimator, save_path, use_ratios=True):
     """
     Plot the observations and predictions of the test sets of the random forest model 
     
@@ -202,9 +202,14 @@ def RandomForestPerformance(rfm_1, rfm_1_estimator, rfm_2, rfm_2_estimator, save
                                    sharex = True, sharey = True) #
     
     for ax, rfm, estimator in zip([ax1, ax2], [rfm_1, rfm_2], [rfm_1_estimator, rfm_2_estimator]):
-        observed = rfm.y_test
-        predicted = estimator.predict(rfm.x_test)
-    
+        if use_ratios:
+            observed = np.exp(rfm.y_test) / (1 + np.exp(rfm.y_test))
+            predicted = estimator.predict(rfm.x_test)
+            predicted = np.exp(predicted) / (1 + np.exp(predicted))
+        else:
+            observed = rfm.y_test
+            predicted = estimator.predict(rfm.x_test)
+        
         coeff, intercept = np.polyfit(x = observed, y = predicted, deg = 1) # Determine linear regression fit
         
         ax.scatter(x = observed, y = predicted, c = 'black', marker = '+') # Plot data points as scatter

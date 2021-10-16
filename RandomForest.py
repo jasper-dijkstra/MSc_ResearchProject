@@ -27,6 +27,7 @@ import numpy as np
 # Sklearn Imports
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split, RandomizedSearchCV, GridSearchCV
+from sklearn.metrics import r2_score, explained_variance_score
 
 class RandomForest:
 
@@ -62,10 +63,10 @@ class RandomForest:
         rf.fit(self.x_train, self.y_train) # Train the model on training data
         
         # Check Out the performance of the model
-        r_squared, errors, accuracy = self.Evaluate(rf, print_output = True)
+        r_squared, mae, exp_var = self.Evaluate(rf, print_output = True)
         self.DefaultForest_performance = {'R-squared':r_squared, 
-                            'Mean Average Error (%)':np.nanmean(errors)*100,
-                            'Accuracy (%)':accuracy}
+                            'Mean Absolute Error':mae,
+                            'Explained Variance':exp_var}
         
         # Now also get Feature Importances
         self.DefaultForest_Importances = self.RelativeImportance(rf)
@@ -87,10 +88,10 @@ class RandomForest:
         rf.fit(self.x_train, self.y_train) # Train the model on training data
         
         # Check Out the performance of the model
-        r_squared, errors, accuracy = self.Evaluate(rf, print_output = True)
+        r_squared, mae, exp_var = self.Evaluate(rf, print_output = True)
         self.DefaultForest_performance = {'R-squared':r_squared, 
-                            'Mean Average Error (%)':np.nanmean(errors)*100,
-                            'Accuracy (%)':accuracy}
+                                        'Mean Absolute Error':mae,
+                                        'Explained Variance':exp_var}
         
         # Now also get Feature Importances
         self.DefaultForest_Importances = self.RelativeImportance(rf)
@@ -115,10 +116,10 @@ class RandomForest:
         randomized.fit(self.x_train, self.y_train)
         
         # Check Out the performance of the Random Grid Search
-        r_squared, errors, accuracy = self.Evaluate(randomized, print_output = True)
+        r_squared, mae, exp_var = self.Evaluate(randomized, print_output = True)
         self.RandomGridSearch_Performance = {'R-squared':r_squared, 
-                                            'Mean Average Error (%)':np.nanmean(errors)*100,
-                                            'Accuracy (%)':accuracy}
+                                            'Mean Absolute Error': mae,
+                                            'Explained Variance': exp_var}
         
         # Now also get Feature Importances
         self.RandomGridSearch_Importances = self.RelativeImportance(randomized.best_estimator_)
@@ -159,10 +160,10 @@ class RandomForest:
         self.GridSearch_.fit(self.x_train, self.y_train)
         
         # Check Out the performance of the Random Grid Search
-        r_squared, errors, accuracy = self.Evaluate(self.GridSearch_, print_output = True)
+        r_squared, mae, exp_var = self.Evaluate(self.GridSearch_, print_output = True)
         self.GridSearch_Performance = {'R-squared':r_squared, 
-                                       'Mean Average Error (%)':np.nanmean(errors)*100,
-                                       'Accuracy (%)':accuracy}
+                                       'Mean Absolute Error':mae,
+                                       'Explained Variance':exp_var}
         
         # Now also get Feature Importances
         self.GridSearch_Importances = self.RelativeImportance(self.GridSearch_.best_estimator_)
@@ -187,17 +188,16 @@ class RandomForest:
         
         # Errors in predction
         predictions = model.predict(self.x_test)
-        errors = abs(predictions - self.y_test)
-        mape = 100 * np.mean(errors / self.y_test)
-        accuracy = 100 - mape
+        mae = np.nansum(abs(predictions - self.y_test)) / len(self.y_test)
+        variance = explained_variance_score(self.y_test, predictions)
         
         if print_output:
             print('Model Performance:')
             print('R-Squared test data:', np.round(r_squared, 2))
-            print('Mean Absolute Error: {:0.4f} %.'.format(np.mean(errors) * 100))
-            print('Accuracy = {:0.2f}%. \n'.format(accuracy))
+            print('Mean Absolute Error: {:0.4f}'.format(mae))
+            print('Explained Variance: {:0.2f} \n'.format(variance))
     
-        return r_squared, errors, accuracy
+        return r_squared, mae, variance
     
     
     def RelativeImportance(self, model):
@@ -205,6 +205,20 @@ class RandomForest:
         zip_iterator = zip(self.labels, importances)
         return dict(zip_iterator)
 
+    
+    def UncertaintyEstimate(self, estimator, x_arr):
+        
+        predictions = np.zeros((len(estimator.estimators_), len(x_arr)))  # initiate array to append results to
+        
+        for i, e in enumerate(estimator.estimators_): # e is tree._classes.DecisionTreeRegressor
+            tree_prediction = e.predict(x_arr) # Predict using other trees
+            predictions[i,:] = tree_prediction # Append to array
+        
+        mean = predictions.mean(axis = 0)
+        std = predictions.std(axis = 0)
+        
+        return mean, std
+            
 
     def __BaseParamGrid__(self):
         
@@ -237,7 +251,7 @@ class RandomForest:
             max_depth = [int(x) for x in np.linspace(start = param_grid["max_depth"] - 20, stop = param_grid["max_depth"] + 20, num = 5) if x > 0]
             #max_depth.append(None)
         except TypeError:
-            max_depth = param_grid["max_depth"]
+            max_depth = list(param_grid["max_depth"])
     
         # # Number of features to consider at every split
         max_features = [param_grid["max_features"]]

@@ -12,6 +12,7 @@ import os
 
 import numpy as np
 import pandas as pd
+from scipy.optimize import curve_fit
 
 # Local Imports
 import ReadingData as read
@@ -159,7 +160,7 @@ class IndependentVariable:
             prep.ZonalStatistics(wdir, in_zones_shp, tcd_frac, out_xls, value_field)
         if self.ID == 6: # ID 6 = MODIS BA data
             print("Using the Arcpy Module to generate missing Coefficient of Variation in Burned Area")
-            print(f"Looking in {wdir}\a0Data\b01Rasters\06_MODIS_BA for tif files that are output of 'ImportingMODIS.py'")
+            print(rf"Looking in {wdir}\a0Data\b01Rasters\06_MODIS_BA for tif files that are output of 'ImportingMODIS.py'")
             prep.BA_CV_FromModis(wdir, in_zones_shp, filename, value_field)
         if self.ID == 7: # ID 7 = Ruggedness Index
             print('Using the Arcpy Module to generate missing Ruggedness Index data')
@@ -215,8 +216,7 @@ class DependentVariable:
         except AttributeError:
             self.data_with_nan = self.__ReadShapefile__(self, filepath)
         
-        self.data_with_nan = self.__AppendRatios__(self.data_with_nan) # Calculate the ratio's
-        self.data = self.data_with_nan.dropna(subset = ["N_RATIO_Human", "BA_RATIO_Human"])
+        self.data = self.__AppendRatios__(self.data_with_nan) # Calculate the ratio's
         #self.data = self.data_with_nan.fillna(0)# Fill the nan's with 0!
         self.countries = list(self.data_with_nan["CNTR_CODE"].unique())
         self.data_header = list(self.data.columns.values.tolist())
@@ -241,7 +241,7 @@ class DependentVariable:
         df = pd.DataFrame(columns = fields, data = records)
         
         return df
-    
+
     def __AppendRatios__(self, df):
         
         # Determine N_Ratio's
@@ -251,9 +251,71 @@ class DependentVariable:
         # Determine BA_Ratio's
         df["BA_RATIO_Human"] = df["bahuman"] / (df["bahuman"]+df["balightnin"])
         df["BA_RATIO_Lightning"] = 1 - df["BA_RATIO_Human"]
+        
+        # Copy the data with a 'nan' and keep copy, for determination of lognormals
+        self.data_with_nan = df.copy()
+        df = df.dropna(subset = ["N_RATIO_Human", "BA_RATIO_Human"])
 
+
+        
+        # Take the lognormal of the N ratios
+        # Ln_N = pd.Series(np.where(df['N_RATIO_Lightning'] != 0, 
+        #                           np.where(df['N_RATIO_Human'] != 1,
+        #                                    np.log(df['N_RATIO_Human'] / df['N_RATIO_Lightning']),
+        #                                    np.inf),
+        #                           -np.inf).astype(np.float64())).copy()
+        Ln_N = np.log(df['N_RATIO_Human'] / df['N_RATIO_Lightning']).copy()
+        
+        # Replace inf's with values interpolated from data
+        # !!! Or just use the max!?
+        interpolated_N = self.__InterpolateInf__(x_col = df['N_RATIO_Human'], y_col = Ln_N) 
+        df = df.merge(interpolated_N['Y'], left_index=True, right_index=True)
+        df = df.rename(columns={"Y" : "Ln_N"})
+        
+        
+        # Take the lognormal of the BA ratios
+        # Ln_BA = pd.Series(np.where(df['BA_RATIO_Lightning'] != 0, 
+        #                           np.where(df['BA_RATIO_Human'] != 1,
+        #                                    np.log(df['BA_RATIO_Human'] / df['BA_RATIO_Lightning']),
+        #                                    np.inf),
+        #                           -np.inf).astype(np.float64())).copy()  
+        Ln_BA = np.log(df['BA_RATIO_Human'] / df['BA_RATIO_Lightning']).copy()
+        
+        # Replace inf's with values interpolated from data
+        interpolated_BA = self.__InterpolateInf__(x_col = df['BA_RATIO_Human'], y_col = Ln_BA) 
+        df = df.merge(interpolated_BA['Y'], left_index=True, right_index=True)
+        df = df.rename(columns={"Y" : "Ln_BA"})
+        
         return df
+
+
+    def __InterpolateInf__(self, x_col, y_col): #Nonparametric Imputation
+        
+        df = pd.concat([x_col.rename('X'), y_col.rename('Y')], axis = 1) # Merge x and y into a df
+
+        # Filter the indices where no Ln could be calculated (x = 1 or x = 0)     out    
+        valid_data = df.loc[df['X'] != 1]
+        valid_data = valid_data.loc[valid_data['X'] != 0]
+        
+        def func(x, a, b, c):
+            return a * np.log((b + x) / (c - x)) # inverse hyperbolic tangent function
+        
+        fit = curve_fit(func, valid_data['X'], valid_data['Y'])
+        
+        inf_replacement_1 = func(0.99999, fit[0][0], fit[0][1], fit[0][2])
+        inf_replacement_0 = func(0.00001, fit[0][0], fit[0][1], fit[0][2])
+        
+        df['Y'] = np.where(df['X'] == 1, inf_replacement_1, df['Y']) # Fill the column
+        df['Y'] = np.where(df['X'] == 0, inf_replacement_0, df['Y']) # Fill the column
+        
+        return df
+        
+        
+
+        
     
+
+
     def ExportSHP(self, DataFrame, out_path):
         """Export Spatial DataFrame as shp file"""
         sdf = pd.merge(DataFrame, self.geometries, on=['NUTS_ID'])

@@ -169,9 +169,10 @@ def BA_CV_FromModis(wdir, in_zones_shp, filename, value_field = "NUTS_ID"):
         df = df.rename(columns = {"SUM" : f"SUM{year}"})
         
     # Calculate the coefficient of variation
-    df['mean'] = df.mean(axis = 1)
-    df['stdev'] = df.std(axis = 1)
-    df['BA_CV'] = np.divide(df['stdev'], df['mean'])#, 
+    valid_labels = [col for col in df.columns if "SUM" in col]
+    df['mean'] = df[valid_labels].mean(axis = 1)
+    df['stdev'] = df[valid_labels].std(axis = 1)
+    df['BA_CV'] = np.divide(df['stdev'], df['mean'])
     
     # Save dataframe as csv
     df.to_csv(os.path.join(wdir + os.path.sep + r"a0Data\b03ExcelCSV" + os.path.sep + filename))
