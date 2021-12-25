@@ -78,6 +78,7 @@ class AnalysisObject:
         elif re.search("._BA", self.dependent.iloc[:,-1].name): 
             self.modis_ba = self.__ComputeBA__(modis_ba)
             self.country_ratios = self.__RatiosPerCountry__(modis_ba)
+            self.continent_ratio = self.__RatiosPerContinent__(modis_ba)
         
         return  
     
@@ -107,50 +108,6 @@ class AnalysisObject:
         return human_ratio, lightning_ratio
 
 
-    def ExportToCSV(self, out_path, geo_name = "NUTS_ID", extra_cols = None):
-        """ Export predicted data to csv file """
-        
-        # First check if predictions have been made, else exporting would be useless
-        if not hasattr(self, "ratios_nuts"):
-            print("Please first predict for the unknown regions, before exporting!")
-            return 
-        
-        # Check if we are eporting fire incidence or burned area
-        if re.search("._N", self.dependent.iloc[:,-1].name):
-            tag = "N_RATIO"
-        else: 
-            tag = "BA_RATIO"
-        
-        # Create a DataFrame containing the observations and predictions for all regions
-        if geo_name == "NUTS_ID":
-            df = pd.DataFrame(self.raw[[geo_name, f"{tag}_Human", f"{tag}_Lightning"]].copy()) # Get the known data
-            df = pd.merge(df, self.ratios_nuts, on = geo_name, how="outer") # Merge with the predictions
-            df = df.rename(columns = {f"{tag}_Human" : "Obs_R_Human",           # Rename for clarification
-                                      f"{tag}_Lightning" : "Obs_R_Lightning", 
-                                      "RATIO_Human" : "Pr_R_Human", 
-                                      "RATIO_Lightning" : "Pr_R_Lightning"})
-            ln_y = pd.concat([self.unknown_ratios[["NUTS_ID", f"{self.dependent_label}"]], self.dependent])
-            df = pd.merge(ln_y, df, on = geo_name, how="outer") # Also add the dependent variable to the df
-        elif geo_name != "NUTS_ID" and tag == "BA_RATIO" and hasattr(self, "country_ratios"):
-            df = self.country_ratios
-            extra_cols = None
-        
-        
-        # If desired, add extra columns to the output, such as uncertainty estimate
-        if type(extra_cols) != type(None): 
-            df = pd.merge(df, extra_cols, on = geo_name, how="outer")
-        
-        # If we are dealing with burned area, and modis_ba is known, 
-        # also add a column ba differentiated per source
-        if geo_name == "NUTS_ID" and tag == "BA_RATIO" and hasattr(self, "modis_ba"):
-            df = pd.merge(df, self.modis_ba, on = geo_name, how="outer")
-            
-        # The actual export
-        df.to_csv(out_path, sep = ';')
-
-        return
-    
-    
     def DetermineCorrelations(self, df, ylabels, xlabels, confidence=0.95):
         """ 
         Generate Correlation Matrix and determine p-values 
@@ -228,66 +185,13 @@ class AnalysisObject:
         return df
     
 
-    def __DetermineCountryRatios__(self):
-        """ 
-        This function generates a pandas DataFrame with the aggregated weighted mean of all 
-        independent variables per country. This data can then be fed to a RandomForestRegressor to estimate 
-        the ln(human_ratio / lightning_ratio).
-
-        NOTE this function is DEPRACATED, as the fire ratios per country are now determined using MODIS BA data:
-            ratio_human(country) = sum(BA_human(nuts3)) / sum(mean_annual_modis_BA(country))
-            
-        """
-        
-        x, labels = self.__IndependentVariablesDF__(self.raw["NUTS_ID"]) # Get value of all NUTS zones and their vals.
-        
-        cntr_df = pd.DataFrame(columns = self.independent_labels) # Initiate df to append data to
-        
-        for cntr in self.raw["CNTR_CODE"].unique():
-            cntr_y = self.raw.loc[self.raw['CNTR_CODE'] == cntr] # Select all NUTS regions (+area) belonging to a country
-            cntr_x = x.loc[x["NUTS_ID"].str.contains(cntr)] # Select x data belonging to the country
-            
-            xy_df = pd.merge(cntr_y[["NUTS_ID", "NUTS_Area"]], cntr_x, on = "NUTS_ID")
-            
-            # Calculate weighted mean (area-wise) of all NUTS regions
-            total_area = np.sum(xy_df["NUTS_Area"]) # km2
-            weighted_sum = xy_df.iloc[:,2:].multiply(xy_df.iloc[:,1], axis="index").sum(axis = 0)
-            
-            weighted_mean = (weighted_sum / total_area).rename(cntr)
-            
-            cntr_df = cntr_df.append(weighted_mean, ignore_index = False)
-        
-        # Now sort the df per country and add column for predictions to it
-        cntr_df['CNTR_CODE'] = cntr_df.index
-        df = cntr_df['CNTR_CODE'].copy().reset_index()
-        df.pop('index')
-        df[self.dependent_label] = float('nan')
-        df = pd.merge(df, cntr_df, on = 'CNTR_CODE')
-        
-        return df
-    
-    
-    def __IndependentVariablesDF__(self, geo_col):
-        """ Summarize all independent variable data into one df """
-        
-        labels = []
-        geo_name = geo_col.name
-        
-        for i, iv in enumerate(self.iv_list):
-            geo_col = pd.merge(geo_col, iv.data, on=[geo_name]) # Append to the dependent variable dataframe
-            geo_col.rename(columns = {iv.data.columns[-1] : iv.name}, inplace = True)      
-            labels.append(iv.name)
-            
-        return geo_col, labels
-    
-    
     def __RatiosPerCountry__(self, modis_ba):
         print("Determining the fire cause ratio's per country, using MODIS BA data.")
         
         cntr_df = pd.DataFrame(columns = ["CNTR_CODE", "BA_RATIO_Human", "BA_RATIO_Lightning"])
         for cntr in self.raw["CNTR_CODE"].unique():
             # Select all NUTS regions belonging to a country
-            ba_human_lightning = self.modis_ba[self.modis_ba['NUTS_ID'].str.startswith(cntr)]
+            ba_human_lightning = self.modis_ba[self.modis_ba['NUTS_ID'].str.startswith(cntr)] # lightning & human ba determined in __ComputeBA__
             ba_modis = modis_ba[modis_ba['NUTS_ID'].str.startswith(cntr)].copy() # MODIS BA
             ba_modis["km2"] = (ba_modis.iloc[:,-1].copy() * 111 * 0.004850803768137106758**2) # km2
             
@@ -300,6 +204,82 @@ class AnalysisObject:
                                       "BA_RATIO_Lightning": ratio_lightning}, ignore_index=True)
         
         return cntr_df
+    
+    
+    def __RatiosPerContinent__(self, modis_ba):
+        print("Determining the human caused BA in the whole EU, using MODIS BA data.")
+
+        # Read MODIS data array and convert to km2
+        modis_pixel_area = 111 * 0.004850803768137106758**2 # km2
+        modis_ba.iloc[:,-1] *= modis_pixel_area        
+
+        total_human_ba = 0 # Initiate variable for total human BA
+        total_ba = 0 # Initiate variable for total BA
+        for nuts_region in self.raw["NUTS_ID"]:
+            # Sum the human caused BA for each 'nuts_region':
+            if not np.isnan(np.float64(self.modis_ba.loc[self.modis_ba["NUTS_ID"] == nuts_region]["BA_Human_km2"])):
+                total_human_ba += np.float64(self.modis_ba.loc[self.modis_ba["NUTS_ID"] == nuts_region]["BA_Human_km2"]) 
+            
+            # Sum the total BA per NUTS region
+            if not np.isnan(np.float64(modis_ba.loc[modis_ba["NUTS_ID"] == nuts_region]["mean"])):
+                total_ba += np.float64(modis_ba.loc[modis_ba["NUTS_ID"] == nuts_region]["mean"]) 
+            
+        human_frac_continent = total_human_ba / total_ba
+        print(f"Approximately {np.round(human_frac_continent*100,2)}% of Burned Area in Europe has an anthropogenic cause!")
+                
+        return human_frac_continent
+    
+    # def __DetermineCountryRatios__(self):
+    #     """ 
+    #     This function generates a pandas DataFrame with the aggregated weighted mean of all 
+    #     independent variables per country. This data can then be fed to a RandomForestRegressor to estimate 
+    #     the ln(human_ratio / lightning_ratio).
+
+    #     NOTE this function is DEPRACATED, as the fire ratios per country are now determined using MODIS BA data:
+    #         ratio_human(country) = sum(BA_human(nuts3)) / sum(mean_annual_modis_BA(country))
+            
+    #     """
+        
+    #     x, labels = self.__IndependentVariablesDF__(self.raw["NUTS_ID"]) # Get value of all NUTS zones and their vals.
+        
+    #     cntr_df = pd.DataFrame(columns = self.independent_labels) # Initiate df to append data to
+        
+    #     for cntr in self.raw["CNTR_CODE"].unique():
+    #         cntr_y = self.raw.loc[self.raw['CNTR_CODE'] == cntr] # Select all NUTS regions (+area) belonging to a country
+    #         cntr_x = x.loc[x["NUTS_ID"].str.contains(cntr)] # Select x data belonging to the country
+            
+    #         xy_df = pd.merge(cntr_y[["NUTS_ID", "NUTS_Area"]], cntr_x, on = "NUTS_ID")
+            
+    #         # Calculate weighted mean (area-wise) of all NUTS regions
+    #         total_area = np.sum(xy_df["NUTS_Area"]) # km2
+    #         weighted_sum = xy_df.iloc[:,2:].multiply(xy_df.iloc[:,1], axis="index").sum(axis = 0)
+            
+    #         weighted_mean = (weighted_sum / total_area).rename(cntr)
+            
+    #         cntr_df = cntr_df.append(weighted_mean, ignore_index = False)
+        
+    #     # Now sort the df per country and add column for predictions to it
+    #     cntr_df['CNTR_CODE'] = cntr_df.index
+    #     df = cntr_df['CNTR_CODE'].copy().reset_index()
+    #     df.pop('index')
+    #     df[self.dependent_label] = float('nan')
+    #     df = pd.merge(df, cntr_df, on = 'CNTR_CODE')
+        
+    #     return df
+    
+
+    def __IndependentVariablesDF__(self, geo_col):
+        """ Summarize all independent variable data into one df """
+        
+        labels = []
+        geo_name = geo_col.name
+        
+        for i, iv in enumerate(self.iv_list):
+            geo_col = pd.merge(geo_col, iv.data, on=[geo_name]) # Append to the dependent variable dataframe
+            geo_col.rename(columns = {iv.data.columns[-1] : iv.name}, inplace = True)      
+            labels.append(iv.name)
+            
+        return geo_col, labels
     
     
     def __UnknownRatios__(self):
@@ -320,3 +300,55 @@ class AnalysisObject:
         return df_nuts
     
     
+    def ExportToCSV(self, out_path, geo_name = "NUTS_ID", extra_cols = None):
+        """ Export predicted data to csv file """
+        
+        # First check if predictions have been made, else exporting would be useless
+        if not hasattr(self, "ratios_nuts"):
+            print("Please first predict for the unknown regions, before exporting!")
+            return 
+        
+        # Check if we are eporting fire incidence or burned area
+        if re.search("._N", self.dependent.iloc[:,-1].name):
+            tag = "N_RATIO"
+        else: 
+            tag = "BA_RATIO"
+        
+        # Create a DataFrame containing the observations and predictions for all regions
+        if geo_name == "NUTS_ID":
+            df = pd.DataFrame(self.raw[[geo_name, f"{tag}_Human", f"{tag}_Lightning"]].copy()) # Get the known data
+            df = pd.merge(df, self.ratios_nuts, on = geo_name, how="outer") # Merge with the predictions
+            
+            # Rename for clarification
+            df = df.rename(columns = {f"{tag}_Human" : "Fr_An_Observed", # Observed Anthropogenic Fraction
+                                      f"{tag}_Lightning" : "Fr_Li_Observed", # Observed Lightning Fraction
+                                      "RATIO_Human" : "Fr_An_Predicted", # Predicted Anthropogenic Fraction
+                                      "RATIO_Lightning" : "Fr_Li_Predicted"}) # Predicted Lightning Fraction
+            ln_y = pd.concat([self.unknown_ratios[["NUTS_ID", f"{self.dependent_label}"]], self.dependent])
+            df = pd.merge(ln_y, df, on = geo_name, how="outer") # Also add the dependent variable to the df
+        elif geo_name != "NUTS_ID" and tag == "BA_RATIO" and hasattr(self, "country_ratios"):
+            df = self.country_ratios
+            extra_cols = None
+            
+            # Rename for clarification
+            df = df.rename(columns = {"BA_RATIO_Human" : "Fr_Anthropogenic", # Observed Anthropogenic Fraction
+                                      "BA_RATIO_Lightning" : "Fr_Lightning"}) # Predicted Anthropogenic Fraction
+        
+        
+        # If desired, add extra columns to the output, such as uncertainty estimate
+        if type(extra_cols) != type(None): 
+            df = pd.merge(df, extra_cols, on = geo_name, how="outer")
+        
+        # If we are dealing with burned area, and modis_ba is known, 
+        # also add a column ba differentiated per source
+        if geo_name == "NUTS_ID" and tag == "BA_RATIO" and hasattr(self, "modis_ba"):
+            df = pd.merge(df, self.modis_ba, on = geo_name, how="outer")
+            
+            
+        # The actual export
+        df.to_csv(out_path, sep = ';')
+    
+        return
+    
+   
+                

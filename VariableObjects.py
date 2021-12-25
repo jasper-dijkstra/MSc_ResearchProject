@@ -297,13 +297,13 @@ class DependentVariable:
         valid_data = df.loc[df['X'] != 1]
         valid_data = valid_data.loc[valid_data['X'] != 0]
         
-        def func(x, a, b, c):
+        def func(x, a, b, c): # Base function that we will need to fit to
             return a * np.log((b + x) / (c - x)) # inverse hyperbolic tangent function
         
-        fit = curve_fit(func, valid_data['X'], valid_data['Y'])
+        fit = curve_fit(func, valid_data['X'], valid_data['Y']) # Determine fit
         
-        inf_replacement_1 = func(0.99999, fit[0][0], fit[0][1], fit[0][2])
-        inf_replacement_0 = func(0.00001, fit[0][0], fit[0][1], fit[0][2])
+        inf_replacement_1 = func(0.99999, fit[0][0], fit[0][1], fit[0][2]) # Determine replacement values 1
+        inf_replacement_0 = func(0.00001, fit[0][0], fit[0][1], fit[0][2]) # Determine replacement values 0
         
         df['Y'] = np.where(df['X'] == 1, inf_replacement_1, df['Y']) # Fill the column
         df['Y'] = np.where(df['X'] == 0, inf_replacement_0, df['Y']) # Fill the column
@@ -311,11 +311,6 @@ class DependentVariable:
         return df
         
         
-
-        
-    
-
-
     def ExportSHP(self, DataFrame, out_path):
         """Export Spatial DataFrame as shp file"""
         sdf = pd.merge(DataFrame, self.geometries, on=['NUTS_ID'])

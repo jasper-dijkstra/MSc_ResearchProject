@@ -35,7 +35,7 @@ import PlottingData as plot
 # ===============================
 # Specify Functions
 # ===============================
-def RandomForestAnalysis(x, y, param_dict = None):
+def RandomForestAnalysis(x, y, param_dict = None, predict_arr=None):
     """Instantiate Random Forest Analysis"""
     rfm = forest.RandomForest(x = x, 
                               y = y, 
@@ -43,7 +43,8 @@ def RandomForestAnalysis(x, y, param_dict = None):
                               param_dict =  param_dict, # parameter values that have proven to be effective
                               test_size= 0.3, # Size (%) of the test data
                               #random_state=42, # Define random_state for reproducibility
-                              scoring='explained_variance') # Scoring method to optimize
+                              scoring='explained_variance', # Scoring method to optimize
+                              predict_arr = predict_arr)
     
     if not param_dict: # If no parameter dict has been provided, determine optimal parameters automatically
         rfm.RandomizedGridSearch(n_param_samples = 50)  # Tune parameters with randomized grid search, n_param_samples = amount of random samples to draw
@@ -105,6 +106,25 @@ def CheckAllVariableCombinations(analysis_obj, file_out):
     return
 
 
+def CompareScores(x, y, params):
+    
+    # Create list with all xlabels used, and all xlabels without one
+    xlabels = list(x.columns)
+    combis = [xlabels]
+    for i in range(len(xlabels)):
+        c = [p for p in xlabels if p != xlabels[i]]
+        combis.append(c)
+    
+    # Now, for each one, determine the best R2, and note this down
+    out_dict = {}
+    for n, i in enumerate(combis):
+        rfm, estimator = RandomForestAnalysis(x = x[i], y = y, param_dict = params) # Random Forest Ananlysis
+        unc = np.std(rfm.score_uncertainty) # Standard Deviation of different R2 scores
+        score = rfm.DefaultForest_performance["R-squared"]
+        out_dict[n] = {"xlabels" : i, 'r2' : score, 'uncertainty' : unc}
+        
+    return out_dict
+
 # ===============================
 # Define Input Data / Variables
 # ===============================
@@ -113,8 +133,7 @@ t0 = datetime.now() # Register starting time of the model
 # Directory where output figures should be stored
 fig_wdir = r"G:\Mijn Drive\VU\AM_1265_Research_Project_Earth_And_Climate\02_Report\Figures"
 
-predict_other_zones = False # If true, fire ratios for other zones than NUTS3 will be estimated as well.
-create_plots = False  # If true, data plots will be generated.
+create_plots = True  # If true, data plots will be generated.
 
 # Reading the fire data shp as dependent variable object (specify filepath):
 fires = init.DependentVariable(filepath = os.path.join(wdir + os.path.sep + r"a0Data\b02Shapes\NUTS_fire2.shp"))
@@ -187,19 +206,24 @@ fi_forest_params =  {"bootstrap" : True,
                     "min_samples_split" : 5,
                     "n_estimators" : 600}
 
-fi_rfm, fi_estimator = RandomForestAnalysis(x = fire_incidence.independent[fi_xlabels], 
-                                            y = fire_incidence.dependent.drop("NUTS_ID", axis=1), 
-                                            param_dict = fi_forest_params)
+# Make sure all indices are sorted! 
+fi_x = fire_incidence.independent[["NUTS_ID"] + fi_xlabels].set_index("NUTS_ID")
+fi_y = fire_incidence.dependent.set_index("NUTS_ID")
+fi_xy = pd.merge(fi_x, fi_y, left_index=True, right_index=True)
+
+fi_rfm, fi_estimator = RandomForestAnalysis(x = fi_xy[fi_xlabels], 
+                                            y = fi_xy.iloc[:,-1], 
+                                            param_dict = fi_forest_params,
+                                            predict_arr = fire_incidence.unknown_ratios[["NUTS_ID"] + fi_xlabels].set_index("NUTS_ID"))
+
+# Get an estimate of the uncertainty
+fi_unc = pd.DataFrame(fire_incidence.unknown_ratios["NUTS_ID"])
+fi_unc["std"] = fi_rfm.std_predictions
 
 fire_incidence.Predict(fi_estimator, fi_xlabels) # Since we have a RFM estimator, we can predict gaps in our data
 
-mean, std = fi_rfm.UncertaintyEstimate(fi_estimator, fire_incidence.unknown_ratios[fi_xlabels]) # Get the mean and std of the tested data
-unc = pd.DataFrame(fire_incidence.unknown_ratios["NUTS_ID"])
-unc["Uncertainty"] = std / (1 + std)
-
 # Export results to a csv file
-fire_incidence.ExportToCSV(os.path.join(wdir + os.path.sep + r"a0Data\b03ExcelCSV\Predicted_FireIncidence.csv"), extra_cols = unc)
-
+fire_incidence.ExportToCSV(os.path.join(wdir + os.path.sep + r"a0Data\b03ExcelCSV\Predicted_FireIncidence.csv"), extra_cols = fi_unc)
 
 # ===============================
 # Analysis: Burned Area
@@ -218,18 +242,24 @@ ba_forest_params =  {"bootstrap" : True,
                      "min_samples_split" : 12,
                      "n_estimators" : 1000}
 
-ba_rfm, ba_estimator = RandomForestAnalysis(x = burned_area.independent[ba_xlabels], 
-                                            y = burned_area.dependent.drop("NUTS_ID", axis=1), 
-                                            param_dict = ba_forest_params)
+# Make sure all indices are sorted! 
+ba_x = burned_area.independent[["NUTS_ID"] + ba_xlabels].set_index("NUTS_ID")
+ba_y = burned_area.dependent.set_index("NUTS_ID")
+ba_xy = pd.merge(ba_x, ba_y, left_index=True, right_index=True)
+
+ba_rfm, ba_estimator = RandomForestAnalysis(x = ba_xy[fi_xlabels], 
+                                            y = ba_xy.iloc[:,-1], 
+                                            param_dict = ba_forest_params,
+                                            predict_arr = burned_area.unknown_ratios[["NUTS_ID"] + ba_xlabels].set_index("NUTS_ID"))
+
+# Get an estimate of the uncertainty
+ba_unc = pd.DataFrame(burned_area.unknown_ratios["NUTS_ID"])
+ba_unc["std"] = ba_rfm.std_predictions
 
 burned_area.Predict(ba_estimator, ba_xlabels, modis_ba = iv6.metadata[["NUTS_ID", "mean"]]) # Since we have a RFM estimator, we can predict gaps in our data
 
-mean, std = fi_rfm.UncertaintyEstimate(fi_estimator, burned_area.unknown_ratios[ba_xlabels]) # Get the mean and std of the tested data
-unc = pd.DataFrame(burned_area.unknown_ratios["NUTS_ID"])
-unc["Uncertainty"] = std / (1 + std)
-
 # Export results to a csv file
-burned_area.ExportToCSV(os.path.join(wdir + os.path.sep + r"a0Data\b03ExcelCSV\Predicted_BurnedArea.csv"), extra_cols = unc)
+burned_area.ExportToCSV(os.path.join(wdir + os.path.sep + r"a0Data\b03ExcelCSV\Predicted_BurnedArea.csv"), extra_cols = ba_unc)
 burned_area.ExportToCSV(os.path.join(wdir + os.path.sep + r"a0Data\b03ExcelCSV\Predicted_BurnedArea_Country.csv"), geo_name = "CNTR_CODE")
 
 
@@ -239,7 +269,7 @@ burned_area.ExportToCSV(os.path.join(wdir + os.path.sep + r"a0Data\b03ExcelCSV\P
 if create_plots:
     # Initialise lists with names of all x an y items
     xitems = ["N_RATIO_Human", "BA_RATIO_Human"]
-    yitems = ["Human Land Impact", "Altitude", "Population Density", "Tree Cover Density", "BA Coefficient of Variation", "Terrain Ruggedness Index"]
+    yitems = ["Human Land Impact", "Altitude", "Population Density", "Lightning Flashes per km2", "Tree Cover Density", "BA Coefficient of Variation", "Terrain Ruggedness Index"]
     
     # Initialise df with all data required for most plots summarized
     df = pd.merge(fire_incidence.raw[["NUTS_ID", xitems[0]]].dropna(), 
@@ -247,41 +277,54 @@ if create_plots:
     df = pd.merge(df, fire_incidence.independent, on = "NUTS_ID")
     
     # Create a correlation matrix of all data
-    spearman_p, pearson_p, spearman_corr, pearson_corr = fire_incidence.DetermineCorrelations(df, xitems, yitems, confidence=0.95)[2]
-
+    spearman_p, pearson_p, spearman_corr, pearson_corr = fire_incidence.DetermineCorrelations(df, xitems, yitems, confidence=0.95)#[2]
     
     
     # ====== Plot Correlation Matrices ======
-    labels = ["Fire Incidence\n Ratio", "Burned Area\n Ratio", "Human Land\n Impact", "Mean Altitude", 
+    labels = ["Anthropogenic Fire \nIncidence Fraction", "Anthropogenic Burned \nArea Fraction", "Human Land\n Impact", "Mean Altitude", 
               "Population Density", "Lightning Flashes\n per km2", "Tree Cover\n Density", "Burned Area Coeff.\n of Variation", "Terrain Ruggedness\n Index"]
     
     plot.CorrelationMatrix(data = pearson_corr, labels = labels, 
-                           save_path = os.path.join(fig_wdir + os.path.sep + "Figx_CorrMatrix_Pearson.png"))
+                            save_path = os.path.join(fig_wdir + os.path.sep + "Figx_CorrMatrix_Pearson.jpg"))
+    
+    
     plot.CorrelationMatrix(data = spearman_corr, labels = labels, 
-                           save_path = os.path.join(fig_wdir + os.path.sep + "Figx_CorrMatrix_Spearman.png"))
+                            save_path = os.path.join(fig_wdir + os.path.sep + "Fig3_CorrMatrix_Spearman.jpg"))
     
     
     # ====== Plot 6 x 2 Correlation Scatter Plots ======
-    xlabels = ["Fire Incidence Ratio", "Burned Area Ratio"]
-    ylabels = ["Human Land \n Impact", "Mean Altitude", "Population Density", "Tree Cover \n Density", "BA Coef. of \n Variation", "Terrain Ruggedness \n Index"]
+    xlabels = ["Anthropogenic Fire \nIncidence Fraction", "Anthropogenic Burned \nArea Fraction"]
+    ylabels = ["Human Land \n Impact", "Mean \n Altitude (m)", "Population \n per $km^2$", "Tree Cover \n Density", "BA Coefficient \n of Variation", "Terrain Ruggedness \n Index"]
+    yitems2 = yitems.copy()
+    yitems2.remove("Lightning Flashes per km2")
     
-    plot.CorrelationPlots(data = df, corr_idx = spearman_corr, xitems = xitems, yitems = yitems, 
-                          save_path = os.path.join(fig_wdir + os.path.sep + "Figx_CorrelationPlots2.png"), 
+    plot.CorrelationPlots(data = df, corr_idx = spearman_corr, xitems = xitems, yitems = yitems2, 
+                          save_path = os.path.join(fig_wdir + os.path.sep + "Fig4_CorrelationPlots.jpg"), 
                           xlabels = xlabels, ylabels = ylabels)
+    
+    
+    # ===== Plot Actual Test, vs Predicted Test data =====
+    plot.RandomForestPerformance(fi_rfm, fi_estimator, ba_rfm, ba_estimator, 
+                                  save_path = os.path.join(fig_wdir + os.path.sep + "Fig5_PerformanceScatter.jpg"))
     
     
     # ===== Plot Bar Charts with relative importance of variables =====
     plot.FeatureImportance(ForestRegressor = fi_estimator, 
                            labels = fi_rfm.labels, 
-                           save_path = os.path.join(fig_wdir + os.path.sep + 'Figx_RelativeImportanceBars2'),
+                           save_path = os.path.join(fig_wdir + os.path.sep + 'Fig6_RelativeImportanceBars.jpg'),
                            ForestRegressor2 = ba_estimator, 
                            labels2 = ba_rfm.labels)
     
+    # ===== Plot Bar Charts model score and effects of removing variables =====
+    fi_out = CompareScores(x = fi_xy[fi_xlabels], y = fi_xy.iloc[:,-1], params = fi_forest_params) # Check effects of varying variables to the model score
+    ba_out = CompareScores(x = ba_xy[ba_xlabels], y = ba_xy.iloc[:,-1], params = ba_forest_params) # Check effects of varying variables to the model score
     
-    # Plot the observations and predictions of the test sets of the random forest model 
-    plot.RandomForestPerformance(rfm_1 = fi_rfm, rfm_1_estimator = fi_estimator,
-                                 rfm_2 = ba_rfm, rfm_2_estimator = ba_estimator, 
-                                 save_path = os.path.join(fig_wdir + os.path.sep + r'Figx_PerformanceScatter.png'),
-                                 use_ratios=False)
+    plot.CompareModelScore(save_path = os.path.join(fig_wdir + os.path.sep + 'Fig7_ModelScoreBars.jpg'), 
+                            out = fi_out,
+                            out2 = ba_out)
+    
+    
 
 print(f"Total time elapsed: {datetime.now()-t0}")
+
+

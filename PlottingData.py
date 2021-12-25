@@ -43,7 +43,7 @@ def CorrelationMatrix(data, labels, save_path):
         fig, ax = plt.subplots(figsize=(8.27,5.845)) # Half A4
         g = sns.heatmap(data, mask = mask, # The data to be shown + maskes
                         vmin = -1, vmax = 1, cmap = 'vlag', # Identify and anchor the colormap
-                        yticklabels = labels, # Set xlabels (ylabels will follow)
+                        yticklabels = labels, # Set ylabels (xlabels will follow)
                         annot = True, fmt = ".2f", # Show numbers inside heatmap, up to two decimals
                         linewidths = 0.5, square=True, # technical visualisation aspects
                         center = 0, cbar_kws = {'shrink':.8}, ax=ax)
@@ -86,7 +86,7 @@ def CorrelationPlots(data, corr_idx, xitems, yitems, save_path, xlabels = None, 
     """
     # Make sure data is presented correctly for plot template
     assert len(xitems) == 2, "Variable xitems should contain exactly 2 items!"
-    assert len(yitems) == 6, "Variable xitems should contain exactly 6 items!"
+    assert len(yitems) == 6, "Variable yitems should contain exactly 6 items!"
     
     # If no labels are provided, use the default
     if xlabels == None:
@@ -95,7 +95,7 @@ def CorrelationPlots(data, corr_idx, xitems, yitems, save_path, xlabels = None, 
         ylabels = yitems
     
     # Subplots ID's
-    alphabet = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L']
+    alphabet = np.array([['A', 'B'], ['C', 'D'], ['E', 'F'], ['G', 'H'], ['I', 'J'], ['K', 'L']])
     
     # Initiate figure at size A4, with 6 subplots
     fig, axs = plt.subplots(nrows = 6, ncols = 2, figsize=(8.27, 11.69), dpi=320)
@@ -111,7 +111,7 @@ def CorrelationPlots(data, corr_idx, xitems, yitems, save_path, xlabels = None, 
                 axes.set(xlabel = xlabels[j], ylabel = ylabels[i], xlim=(0,1), ylim=(0, 1000))
     
             rho = np.round(corr_idx[xitems[j]][yitems[i]], 2)
-            plot_id = alphabet[(i+1)*(j+1)-1]
+            plot_id = str(alphabet[i,j])
             axes.text(0.18, 0.9, rf"$\bf({plot_id}):$" + f' \u03C1 = {rho}', ha='center', va='center', transform=axes.transAxes)
             
     # Hide x labels and tick labels for top plots and y ticks for right plots.
@@ -149,11 +149,11 @@ def FeatureImportance(ForestRegressor, labels, save_path, ForestRegressor2=None,
     # Determining uncertainty margins (1 std), of choosing different trees in the forest
     std = np.std([tree.feature_importances_ for tree in ForestRegressor], axis=0)
 
-    if ForestRegressor2 == None:
+    if ForestRegressor2 is None:
         fig, ax = plt.subplots(figsize=(8.27, len(importance)/2))
         ax.barh(labels, importance, 
                 xerr = std, align = 'center', alpha = 0.6, ecolor = 'black', capsize = 3)
-        ax.set_xlabel("Relative Importance (%)")
+        ax.set_xlabel("Fraction of Relative Importance")
     
     else:
         importance2 = ForestRegressor2.feature_importances_
@@ -169,7 +169,7 @@ def FeatureImportance(ForestRegressor, labels, save_path, ForestRegressor2=None,
         
         ax2.barh(y = labels2, width = importance2, height = 0.8,
                  xerr = std2, align = 'center', alpha = 0.6, ecolor = 'black', capsize = 3)
-        ax2.set_xlabel("Relative Importance (%)")
+        ax2.set_xlabel("Fraction of Relative Importance")
         ax2.text(0.975, 0.9, r"$\bf(B)$", ha='center', va='center', transform=ax2.transAxes) # Label Fig
 
 
@@ -180,7 +180,75 @@ def FeatureImportance(ForestRegressor, labels, save_path, ForestRegressor2=None,
 
 
 
-def RandomForestPerformance(rfm_1, rfm_1_estimator, rfm_2, rfm_2_estimator, save_path, use_ratios=True):
+def CompareModelScore(save_path, out, out2=None):
+    """
+    Plot the Score of each predictor variable and the score when one variable is left out, in a bar chart
+    
+
+    Parameters
+    ----------
+    save_path : Location (incl. extension) where output file needs to be stored.
+    out : output (dict) of CompareScores() function
+    out2 : output (dict) of CompareScores() function, optional, the default is None    
+
+    Returns
+    -------
+    Figure saved at: 'save_path'.
+
+    """
+    
+    
+    def SortData(out):
+        # Sort the data to required format
+        labels = ["Total $R^2$"]
+        score = [out[0]["r2"]]
+        unc = [out[0]["uncertainty"]]
+        for i in range(1, len(out)):
+            missing = list(set(out[0]["xlabels"]) - set(out[i]["xlabels"]))
+            labels.append(missing[0])
+            score.append(out[i]["r2"])
+            unc.append(out[i]["uncertainty"])
+        
+        # Define the colors of the bars
+        bar_colors = ['lightgrey' for i in range(len(out))]
+        bar_colors[-1] = 'cornflowerblue'
+        
+        return list(reversed(labels)), list(reversed(score)), list(reversed(unc)), bar_colors
+        
+    # Sort the data to the correct format to be used in the bar chart
+    labels, score, unc, bar_colors = SortData(out)
+    
+    if out2 is None: # Plot a single bar chart fig
+        fig, ax = plt.subplots(figsize=(8.27, len(out)/2))
+        ax.barh(labels, score, xerr = unc, 
+                align = 'center',  ecolor = 'black', color = bar_colors, capsize = 3)
+        ax.set_xlabel("$R^2$ Score")
+    
+    else: # plot a double bar chart fig
+        # Sort the data of the second plot to the correct format to be used in the bar chart
+        labels2, score2, unc2, bar_colors2 = SortData(out2)    
+    
+        fig, (ax1, ax2) = plt.subplots(nrows = 2, ncols = 1 , 
+                                       figsize = (8.27, (len(out)+len(out2))/2), 
+                                       gridspec_kw={'height_ratios': [len(out), len(out2)]},
+                                       sharex = True)
+        
+        ax1.barh(y = labels, width = score, height = 0.8, xerr = unc, 
+                 align = 'center', alpha = 0.6, ecolor = 'black', color = bar_colors, capsize = 3)
+        ax1.text(0.975, 0.9, r"$\bf(A)$", ha='center', va='center', transform=ax1.transAxes) # Label Fig
+        
+        ax2.barh(y = labels2, width = score2, height = 0.8, xerr = unc2, 
+                 align = 'center', alpha = 0.6, ecolor = 'black', color = bar_colors2, capsize = 3)
+        ax2.set_xlabel("$R^2$ Score")
+        ax2.text(0.975, 0.9, r"$\bf(B)$", ha='center', va='center', transform=ax2.transAxes) # Label Fig
+    
+    
+    #layout()
+    fig.savefig(save_path, dpi=300, bbox_inches='tight')
+
+
+
+def RandomForestPerformance(rfm_1, rfm_1_estimator, rfm_2, rfm_2_estimator, save_path):
     """
     Plot the observations and predictions of the test sets of the random forest model 
     
@@ -201,14 +269,19 @@ def RandomForestPerformance(rfm_1, rfm_1_estimator, rfm_2, rfm_2_estimator, save
     fig, (ax1, ax2) = plt.subplots(nrows = 1, ncols = 2, figsize=(8.27, 3),
                                    sharex = True, sharey = True) #
     
-    for ax, rfm, estimator in zip([ax1, ax2], [rfm_1, rfm_2], [rfm_1_estimator, rfm_2_estimator]):
-        if use_ratios:
-            observed = np.exp(rfm.y_test) / (1 + np.exp(rfm.y_test))
-            predicted = estimator.predict(rfm.x_test)
-            predicted = np.exp(predicted) / (1 + np.exp(predicted))
-        else:
-            observed = rfm.y_test
-            predicted = estimator.predict(rfm.x_test)
+    for ax, rfm in zip([ax1, ax2], [rfm_1, rfm_2]):
+        observed = np.exp(rfm.y) / (1 + np.exp(rfm.y))
+        predicted = rfm.average_test_results
+    
+    # Use this when no random assessment of train/test was done
+    # for ax, rfm, estimator in zip([ax1, ax2], [rfm_1, rfm_2], [rfm_1_estimator, rfm_2_estimator]):
+    #     if use_ratios:
+    #         observed = np.exp(rfm.y_test) / (1 + np.exp(rfm.y_test))
+    #         predicted = estimator.predict(rfm.x_test)
+    #         predicted = np.exp(predicted) / (1 + np.exp(predicted))
+    #     else:
+    #         observed = rfm.y_test
+    #         predicted = estimator.predict(rfm.x_test)
         
         coeff, intercept = np.polyfit(x = observed, y = predicted, deg = 1) # Determine linear regression fit
         
@@ -218,13 +291,13 @@ def RandomForestPerformance(rfm_1, rfm_1_estimator, rfm_2, rfm_2_estimator, save
         #ax.set_xlim(0, 1)
         #ax.set_ylim(0, 1)
         
-    ax1.set_xlabel("Observed Fire Incidence \n Ratio")
-    ax2.set_xlabel("Observed Burned Area \n Ratio")
+    ax1.set_xlabel("Observed Anthropogenic Fire \nIncidence Fraction")
+    ax2.set_xlabel("Observed Anthropogenic Burned \nArea Fraction")
     
-    ax1.set_ylabel("RFM Predicted Ratio")
+    ax1.set_ylabel("Random Forest \nPredicted Fraction")
     
-    ax1.text(0.075, 0.925, r"$\bf(A)$", ha='center', va='center', transform=ax1.transAxes)
-    ax2.text(0.075, 0.925, r"$\bf(B)$", ha='center', va='center', transform=ax2.transAxes)
+    ax1.text(0.94, 0.055, r"$\bf(A)$", ha='center', va='center', transform=ax1.transAxes)
+    ax2.text(0.94, 0.055, r"$\bf(B)$", ha='center', va='center', transform=ax2.transAxes)
     
     fig.savefig(save_path, dpi=300, bbox_inches='tight')
 
