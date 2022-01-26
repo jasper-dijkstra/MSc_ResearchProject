@@ -120,7 +120,8 @@ def CompareScores(x, y, params):
     for n, i in enumerate(combis):
         rfm, estimator = RandomForestAnalysis(x = x[i], y = y, param_dict = params) # Random Forest Ananlysis
         unc = np.std(rfm.score_uncertainty) # Standard Deviation of different R2 scores
-        score = rfm.DefaultForest_performance["R-squared"]
+        score = np.mean(rfm.score_uncertainty)
+        #score = rfm.DefaultForest_performance["R-squared"]
         out_dict[n] = {"xlabels" : i, 'r2' : score, 'uncertainty' : unc}
         
     return out_dict
@@ -282,7 +283,7 @@ if create_plots:
     
     # ====== Plot Correlation Matrices ======
     labels = ["Anthropogenic Fire \nIncidence Fraction", "Anthropogenic Burned \nArea Fraction", "Human Land\n Impact", "Mean Altitude", 
-              "Population Density", "Lightning Flashes\n per km2", "Tree Cover\n Density", "Burned Area Coeff.\n of Variation", "Terrain Ruggedness\n Index"]
+              "Population Density", "Lightning Flashes\n per $km^2$", "Tree Cover\n Density", "Burned Area Coeff.\n of Variation", "Terrain Ruggedness\n Index"]
     
     plot.CorrelationMatrix(data = pearson_corr, labels = labels, 
                             save_path = os.path.join(fig_wdir + os.path.sep + "Figx_CorrMatrix_Pearson.jpg"))

@@ -200,7 +200,7 @@ def CompareModelScore(save_path, out, out2=None):
     
     def SortData(out):
         # Sort the data to required format
-        labels = ["Total $R^2$"]
+        labels = ["All variables included"]#["Total $R^2$"]
         score = [out[0]["r2"]]
         unc = [out[0]["uncertainty"]]
         for i in range(1, len(out)):
@@ -283,21 +283,25 @@ def RandomForestPerformance(rfm_1, rfm_1_estimator, rfm_2, rfm_2_estimator, save
     #         observed = rfm.y_test
     #         predicted = estimator.predict(rfm.x_test)
         
-        coeff, intercept = np.polyfit(x = observed, y = predicted, deg = 1) # Determine linear regression fit
+        #coeff, intercept = np.polyfit(x = observed, y = predicted, deg = 1) # Determine linear regression fit
         
-        ax.scatter(x = observed, y = predicted, c = 'black', marker = '+') # Plot data points as scatter
-        ax.plot(observed, observed*coeff + intercept, c = 'red') # Plot regression line
+        ax.scatter(x = predicted, y = observed, c = 'black', marker = '+') # Plot data points as scatter
+        #ax.plot(observed, observed*coeff + intercept, c = 'red') # Plot regression line
         
         #ax.set_xlim(0, 1)
         #ax.set_ylim(0, 1)
         
-    ax1.set_xlabel("Observed Anthropogenic Fire \nIncidence Fraction")
-    ax2.set_xlabel("Observed Anthropogenic Burned \nArea Fraction")
+    ax1.set_ylabel("Observed Anthropogenic Fire \nIncidence Fraction")
+    ax2.set_ylabel("Observed Anthropogenic Burned \nArea Fraction")
+    ax2.yaxis.set_label_coords(-0.05, 0.5)
     
-    ax1.set_ylabel("Random Forest \nPredicted Fraction")
+    ax1.set_xlabel("Random Forest \nPredicted Fraction")
+    ax2.set_xlabel("Random Forest \nPredicted Fraction")
     
-    ax1.text(0.94, 0.055, r"$\bf(A)$", ha='center', va='center', transform=ax1.transAxes)
-    ax2.text(0.94, 0.055, r"$\bf(B)$", ha='center', va='center', transform=ax2.transAxes)
+    ax1.text(0.055, 0.94, r"$\bf(A)$", ha='center', va='center', transform=ax1.transAxes)
+    ax2.text(0.055, 0.94, r"$\bf(B)$", ha='center', va='center', transform=ax2.transAxes)
+    
+    fig.align_labels()
     
     fig.savefig(save_path, dpi=300, bbox_inches='tight')
 
